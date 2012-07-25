@@ -1,4 +1,4 @@
-obj-m = my_ldisc.o
+obj-m = smuxp.o
 KVERSION = $(shell uname -r)
 all:
 	make -C /lib/modules/$(KVERSION)/build M=$(PWD) modules
