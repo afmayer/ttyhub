@@ -8,9 +8,26 @@ MODULE_LICENSE("GPL");
 #error N_SMUXP is larger than the maximum allowed value
 #endif
 
+struct smuxp
+{
+        char txbuf[32];
+        char rxbuf[32]; // TODO alloc buffers, size configurable
+};
+
 static int smuxp_open(struct tty_struct *tty)
 {
+        struct smuxp *data;
+        int err = -ENOBUFS;
+
+        data = kmalloc(sizeof(*data), KERNEL_GFP);
+        if (data == NULL)
+                goto error_exit;
+
+        /* success */
         return 0;
+
+error_exit:
+        return err;
 }
 
 static void smuxp_close(struct tty_struct *tty)
@@ -35,7 +52,7 @@ static void smuxp_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 static void smuxp_write_wakeup(struct tty_struct *tty)
 {
         int written;
-        
+
         //written = tty->ops->write(tty, pointer_to_first_buffer_byte, bytes_in_buffer);
         // TODO update buffer pointer, bytes_in_buffer
 }
@@ -57,14 +74,14 @@ static int smuxp_init(void)
 {
         int status;
 
+        printk(KERN_INFO "SMUXP initialization start\n");
         status = tty_register_ldisc(N_SMUXP, &smuxp_ldisc);
-        printk(KERN_INFO "SMUXP initialization start.\n");
         return 0;
 }
 
 static void smuxp_exit(void)
 {
-        printk(KERN_INFO "SMUXP exiting.\n");
+        printk(KERN_INFO "SMUXP exiting\n");
 }
 
 module_init(smuxp_init);
