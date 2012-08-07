@@ -1,13 +1,20 @@
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/tty.h>
 #include <linux/slab.h>
 MODULE_LICENSE("GPL");
+
+#define TTYHUB_VERSION "0.10 pre-alpha"
 
 #define N_TTYHUB 29
 #if N_TTYHUB >= NR_LDISCS
 #error N_TTYHUB is larger than the maximum allowed value
 #endif
+
+static int maxsubsys = 16;
+module_param(maxsubsys, int, 0);
+MODULE_PARM_DESC(maxsubsys, "Maximum number of TTYHUB subsystems");
 
 struct ttyhub
 {
@@ -81,7 +88,11 @@ static int ttyhub_init(void)
 {
         int status;
 
-        printk(KERN_INFO "TTYHUB initialization start\n");
+        if (maxsubsys < 2)
+                maxsubsys = 2;
+
+        printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d\n",
+                TTYHUB_VERSION, maxsubsys);
         status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc);
         return 0;
 }
