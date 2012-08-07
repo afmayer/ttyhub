@@ -1,6 +1,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/tty.h>
+#include <linux/slab.h>
 MODULE_LICENSE("GPL");
 
 #define N_SMUXP 29
@@ -19,7 +20,7 @@ static int smuxp_open(struct tty_struct *tty)
         struct smuxp *data;
         int err = -ENOBUFS;
 
-        data = kmalloc(sizeof(*data), KERNEL_GFP);
+        data = kmalloc(sizeof(*data), GFP_KERNEL);
         if (data == NULL)
                 goto error_exit;
 
@@ -37,6 +38,12 @@ static void smuxp_close(struct tty_struct *tty)
 static int smuxp_ioctl(struct tty_struct *tty, struct file *filp,
                         unsigned int cmd, unsigned long arg)
 {
+        return 0;
+}
+
+static int smuxp_hangup(struct tty_struct *tty)
+{
+        smuxp_close(tty);
         return 0;
 }
 
@@ -64,8 +71,8 @@ struct tty_ldisc_ops smuxp_ldisc =
         .name         = "smuxp",
         .open         = smuxp_open,
         .close        = smuxp_close,
-        //.hangup       = smuxp_hangup,
         .ioctl        = smuxp_ioctl,
+        .hangup       = smuxp_hangup,
         .receive_buf  = smuxp_receive_buf,
         .write_wakeup = smuxp_write_wakeup
 };
