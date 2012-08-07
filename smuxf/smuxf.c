@@ -88,7 +88,13 @@ static int smuxf_init(void)
 
 static void smuxf_exit(void)
 {
+        int status;
+
         printk(KERN_INFO "SMUXF exiting\n");
+        status = tty_unregister_ldisc(N_SMUXF);
+        if (status != 0)
+                printk(KERN_ERR "SERHUB: can't unregister line "
+                        "discipline (err = %d)\n", status);
 }
 
 module_init(smuxf_init);
