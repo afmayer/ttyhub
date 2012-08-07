@@ -38,7 +38,7 @@ static void smuxp_close(struct tty_struct *tty)
 static int smuxp_ioctl(struct tty_struct *tty, struct file *filp,
                         unsigned int cmd, unsigned long arg)
 {
-        return 0;
+        return -ENOTTY;
 }
 
 static int smuxp_hangup(struct tty_struct *tty)
