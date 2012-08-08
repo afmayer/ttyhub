@@ -3,6 +3,7 @@
 #include <linux/moduleparam.h>
 #include <linux/tty.h>
 #include <linux/slab.h>
+#include <linux/semaphore.h>
 MODULE_LICENSE("GPL");
 
 #define TTYHUB_VERSION "0.10 pre-alpha"
@@ -35,7 +36,9 @@ struct ttyhub_subsystem {
         int (*do_receive)(void);
 };
 
+
 static struct ttyhub_subsystem **ttyhub_subsystems;
+static struct semaphore ttyhub_subsystems_sem;
 
 /* line discipline operations */
 static int ttyhub_open(struct tty_struct *tty)
@@ -134,12 +137,13 @@ static int __init ttyhub_init(void)
         printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe bufsize"
                 " = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
 
-        /* allocate space for pointers to subsystems */
+        /* allocate space for pointers to subsystems and init semaphore */
         ttyhub_subsystems = kzalloc(
                 sizeof(struct ttyhub_subsystem *) * max_subsys,
                 GFP_KERNEL);
         if (ttyhub_subsystems == NULL)
                 return -ENOMEM;
+        sema_init(&ttyhub_subsystems_sem, 1);
 
         /* register line discipline */
         status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc); // TODO dynamic LDISC nr
