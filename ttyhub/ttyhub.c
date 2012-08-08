@@ -35,6 +35,9 @@ struct ttyhub_subsystem {
         int (*do_receive)(void);
 };
 
+static struct ttyhub_subsystem **ttyhub_subsystems;
+
+/* line discipline operations */
 static int ttyhub_open(struct tty_struct *tty)
 {
         struct ttyhub_state *state;
@@ -117,7 +120,8 @@ struct tty_ldisc_ops ttyhub_ldisc =
         .write_wakeup = ttyhub_write_wakeup
 };
 
-static int ttyhub_init(void)
+/* module init/exit functions */
+static int __init ttyhub_init(void)
 {
         int status;
 
@@ -129,19 +133,35 @@ static int ttyhub_init(void)
 
         printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe bufsize"
                 " = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
-        status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc);
-        return 0;
+
+        /* allocate space for pointers to subsystems */
+        ttyhub_subsystems = kzalloc(
+                sizeof(struct ttyhub_subsystem *) * max_subsys,
+                GFP_KERNEL);
+        if (ttyhub_subsystems == NULL)
+                return -ENOMEM;
+
+        /* register line discipline */
+        status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc); // TODO dynamic LDISC nr
+        if (status != 0) {
+                kfree(ttyhub_subsystems);
+                printk(KERN_ERR "TTYHUB: can't register line discipline "
+                        "(err = %d)\n", status);
+        }
+        return status;
 }
 
-static void ttyhub_exit(void)
+static void __exit ttyhub_exit(void)
 {
         int status;
 
-        printk(KERN_INFO "TTYHUB exiting\n");
         status = tty_unregister_ldisc(N_TTYHUB);
         if (status != 0)
                 printk(KERN_ERR "TTYHUB: can't unregister line "
                         "discipline (err = %d)\n", status);
+
+        if (ttyhub_subsystems != NULL)
+                kfree(ttyhub_subsystems);
 }
 
 module_init(ttyhub_init);
