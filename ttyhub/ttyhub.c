@@ -23,8 +23,8 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
 struct ttyhub_state {
         int recv_subsys;
-        unsigned char *probe_buf;
         unsigned char *probed_subsystems;
+        unsigned char *probe_buf;
 };
 
 struct ttyhub_subsystem {
@@ -45,7 +45,9 @@ static struct semaphore ttyhub_subsystems_sem;
 
 /*
  * Probe subsystems if they can identify a received data chunk.
- * The ttyhub_state structure is changed according to the probe results.
+ * The recv_subsys field and the array pointed to by probed_subsystems
+ * of the ttyhub_state structure is changed according to the probe results,
+ * but the probe buffer is not filled in case more data is needed.
  * This is a helper function for ttyhub_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
@@ -54,15 +56,25 @@ static struct semaphore ttyhub_subsystems_sem;
  *  0   either a subsystem has identified the data or all subsystems have
  *      already been probed - state machine must continue in this call
  *  1   the received data has not been identified but may be later with
- *      more data - probe buffer has been filled, call can return
+ *      more data - probe buffer has to be filled
  */
-static int ttyhub_probe_subsystems(struct ttyhub_state *state)
+static int ttyhub_probe_subsystems(struct ttyhub_state *state,
+                        const unsigned char *cp, int count)
 {
-        // TODO implement
+        // TODO implement according to documentation
 }
 
-static int ttyhub_probe_subsystems_size(struct ttyhub_state *state)
-{}
+static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
+                        const unsigned char *cp, int count)
+{
+        // TODO implement + doc
+}
+
+static int ttyhub_push_to_probebuf(struct ttyhub_state *state,
+                        const unsigned char *cp, int count)
+{
+        // TODO implement + doc
+}
 
 /* Line discipline open() operation */
 static int ttyhub_open(struct tty_struct *tty)
@@ -150,29 +162,45 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *        subsystem is unknown a set bit indicates that the subsystem
          *        has already been probed and should not be probed again.
          */
-        while (1) {
+        while (1) { // TODO lock subsystem semaphore
                 if (state->recv_subsys == -1) {
                         /* this may change recv_subsys to -2 or a nonnegative
                            value which then gets processed in the same call */
-                        status = ttyhub_probe_subsystems(state);
-                        if (status)
+                        status = ttyhub_probe_subsystems(state, cp, count);
+                        if (status) {
                                 /* not enough data to probe all subsystems */
+                                status = ttyhub_push_to_probebuf(state,
+                                        cp, count);
                                 return;
+                        }
                 }
                 if (state->recv_subsys == -2) {
-                        status = ttyhub_probe_subsystems_size(state);
+                        status = ttyhub_probe_subsystems_size(state,
+                                cp, count);
+                        //TODO check return code and do something
                 }
                 if (state->recv_subsys >= 0) {
-                        ttyhub_subsystems[state->recv_subsys]->do_receive();
+                        struct ttyhub_subsystem *subs =
+                                ttyhub_subsystems[state->recv_subsys];
+                        status = subs->do_receive();
+                        if (status < 0) {
+                                /* subsystem expects more data */
+                                return;
+                        } else if (status == 0) {
+                                /* subsystem expects no more data */
+                                state->recv_subsys = -1;
+                                return;
+                        } else {
+                                /* no more data expected, bytes remain */
+                                // TODO copy to probe buf
+                        }
                 }
         }
 }
 
 static void ttyhub_write_wakeup(struct tty_struct *tty)
 {
-        int written;
-
-        //written = tty->ops->write(tty, pointer_to_first_buffer_byte, bytes_in_buffer);
+        //int written = tty->ops->write(tty, pointer_to_first_buffer_byte, bytes_in_buffer);
         // TODO update buffer pointer, bytes_in_buffer
 }
 
