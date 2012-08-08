@@ -20,10 +20,19 @@ static int probe_buf_size = 32;
 module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
-struct ttyhub_state
-{
+struct ttyhub_state {
         int recv_subsys;
         unsigned char *probe_buf;
+        unsigned char *probed_subsystems;
+};
+
+struct ttyhub_subsystem {
+        /* subsystem operations called by ttyhub */
+        int (*open)(void); // TODO correct arguments for subsys ops
+        void (*close)(void);
+        int (*probe_data)(void);
+        int (*probe_size)(void);
+        int (*do_receive)(void);
 };
 
 static int ttyhub_open(struct tty_struct *tty)
@@ -34,15 +43,25 @@ static int ttyhub_open(struct tty_struct *tty)
         state = kmalloc(sizeof(*state), GFP_KERNEL);
         if (state == NULL)
                 goto error_exit;
+
         state->recv_subsys = -1;
+
+        /* receive probe buffer */
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
         if (state->probe_buf == NULL)
                 goto error_cleanup_state;
+
+        /* allocate char array with 1 bit for each subsystem */
+        state->probed_subsystems = kmalloc((max_subsys-1)/8 + 1, GFP_KERNEL);
+        if (state->probed_subsystems == NULL)
+                goto error_cleanup_probebuf;
 
         /* success */
         tty->disc_data = state;
         return 0;
 
+error_cleanup_probebuf:
+        kfree(state->probe_buf);
 error_cleanup_state:
         kfree(state);
 error_exit:
@@ -56,6 +75,8 @@ static void ttyhub_close(struct tty_struct *tty)
         if (state == NULL)
                 return;
 
+        if (state->probed_subsystems != NULL)
+                kfree(state->probed_subsystems);
         if (state->probe_buf != NULL)
                 kfree(state->probe_buf);
         kfree(state);
@@ -67,22 +88,13 @@ static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
         return -ENOTTY;
 }
 
-static int ttyhub_hangup(struct tty_struct *tty)
-{
-        ttyhub_close(tty);
-        return 0;
-}
-
 static void ttyhub_receive_buf(struct tty_struct *tty, const unsigned char *cp,
                         char *fp, int count)
 {
+        struct ttyhub_state *state = tty->disc_data;
+
         // TODO conditional output if debug var set
         printk(KERN_INFO "ttyhub_receive_buf() called with count=%d\n", count);
-
-        while (count--)
-        {
-                // TODO receive char by char
-        }
 }
 
 static void ttyhub_write_wakeup(struct tty_struct *tty)
@@ -101,7 +113,6 @@ struct tty_ldisc_ops ttyhub_ldisc =
         .open         = ttyhub_open,
         .close        = ttyhub_close,
         .ioctl        = ttyhub_ioctl,
-        .hangup       = ttyhub_hangup,
         .receive_buf  = ttyhub_receive_buf,
         .write_wakeup = ttyhub_write_wakeup
 };
