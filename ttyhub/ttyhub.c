@@ -76,6 +76,29 @@ static int ttyhub_push_to_probebuf(struct ttyhub_state *state,
         // TODO implement + doc
 }
 
+// TODO only 1 (in/out) pair of pointers? or are unmodified cp and count needed later in the state machine?
+static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
+                        const unsigned char *cp, int count,
+                        const unsigned char **out_cp, int *out_count)
+{
+        // TODO
+        //  (1) probe_buf not in use
+        //      copy the values of cp and count to *out_cp and *out_count
+        //  (2) probe_buf not in use, but parts of cp consumed
+        //      *out_cp = cp + consumed_bytes
+        //      *out_count = count - consumed_bytes
+        //  (3) probe_buf in use (and maybe already partly consumed)
+        //      copy a pointer to the first unread byte in the probe buffer to *out_cp
+        //      and the number of valid bytes from that point on to *out_count
+        //      !!!CAUTION!!! IF THE PROBE BUFFER CONSTANTLY GETS ONLY PARTIALLY CONSUMED
+        //                    IT MIGHT RUN TO ITS END - SO COMPACT IT EVERYTIME ONLY
+        //                    A PART GETS CONSUMED
+        //  In case (3), we should copy newly received data to the probe_buf when it is
+        //  already in use! Update of consumed_bytes neccessary. When the buffer is full
+        //  and then consumed there are still received bytes remaining in
+        //  the cp buffer (count - consumed_bytes).
+}
+
 /* Line discipline open() operation */
 static int ttyhub_open(struct tty_struct *tty)
 {
@@ -161,11 +184,13 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *        bit for every possible subsystem. When the addressed
          *        subsystem is unknown a set bit indicates that the subsystem
          *        has already been probed and should not be probed again.
+         *   TODO describe probe_buf management related fields
          */
         while (1) { // TODO lock subsystem semaphore
                 if (state->recv_subsys == -1) {
                         /* this may change recv_subsys to -2 or a nonnegative
                            value which then gets processed in the same call */
+                        // TODO use ttyhub_get_recvd_data_head()
                         status = ttyhub_probe_subsystems(state, cp, count);
                         if (status) {
                                 /* not enough data to probe all subsystems */
@@ -175,14 +200,31 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                         }
                 }
                 if (state->recv_subsys == -2) {
+                        // TODO use ttyhub_get_recvd_data_head()
                         status = ttyhub_probe_subsystems_size(state,
                                 cp, count);
-                        //TODO check return code and do something
+                        // TODO check return code and do something
+                        // TODO when probe for size fails check if probe_buf is in use
+                        //      and full
+                        //          - if unused only copy to probe_buf and wait for more
+                        //            data when there is less data than fits in the buffer
+                        //            otherwise handle same as if full
+                        //          - if full maybe try to drop based on tty rcv idle time,
+                        //            but generally speaking, this is not good
+                        //          - when there is still space in the probe_buf wait for
+                        //            more data and then retry
+                        //          - this is the only place where we have to check for a full buffer
+                        //            because in the end we always come here (!!!CHECK!!!)
                 }
                 if (state->recv_subsys >= 0) {
                         struct ttyhub_subsystem *subs =
                                 ttyhub_subsystems[state->recv_subsys];
+                        // TODO use ttyhub_get_recvd_data_head()
                         status = subs->do_receive();
+                        // TODO subfunction to be called after consumption of data:
+                        //      if probe buffer is in use update related data
+                        //      fields in ttyhub_state structure and compact the
+                        //      buffer it if only a part of the data has been consumed
                         if (status < 0) {
                                 /* subsystem expects more data */
                                 return;
@@ -192,7 +234,8 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                                 return;
                         } else {
                                 /* no more data expected, bytes remain */
-                                // TODO copy to probe buf
+                                state->recv_subsys = -1;
+                                // TODO copy to probe buf and proceed
                         }
                 }
         }
