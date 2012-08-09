@@ -70,13 +70,15 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
         // TODO implement + doc
 }
 
-static int ttyhub_push_to_probebuf(struct ttyhub_state *state,
+static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
         // TODO implement + doc
+        //  (1) probe_buf not yet in use
+        //      we need to preserve current buffer for next call --> copy
+        //  (2) probe_buf already in use
 }
 
-// TODO only 1 (in/out) pair of pointers? or are unmodified cp and count needed later in the state machine?
 static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
                         const unsigned char *cp, int count,
                         const unsigned char **out_cp, int *out_count)
@@ -158,12 +160,17 @@ static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
 /*
  * Line discipline ioctl() operation
  * Called by the hardware driver when new data arrives.
+ *
+ * Only one call of this function is active at a time so the state
+ * machine needs no explicit lock.
  */
 static void ttyhub_receive_buf(struct tty_struct *tty,
                         const unsigned char *cp, char *fp, int count)
 {
         struct ttyhub_state *state = tty->disc_data;
         int status;
+        const unsigned char *r_cp;
+        int r_count;
 
         // TODO conditional output if debug var set
         printk(KERN_INFO "ttyhub_receive_buf() called with count=%d\n", count);
@@ -190,11 +197,12 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                 if (state->recv_subsys == -1) {
                         /* this may change recv_subsys to -2 or a nonnegative
                            value which then gets processed in the same call */
-                        // TODO use ttyhub_get_recvd_data_head()
-                        status = ttyhub_probe_subsystems(state, cp, count);
+                        ttyhub_get_recvd_data_head(state, cp, count,
+                                                &r_cp, &r_count);
+                        status = ttyhub_probe_subsystems(state, r_cp, r_count);
                         if (status) {
                                 /* not enough data to probe all subsystems */
-                                status = ttyhub_push_to_probebuf(state,
+                                status = ttyhub_probebuf_push(state,
                                         cp, count);
                                 return;
                         }
