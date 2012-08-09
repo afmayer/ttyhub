@@ -42,6 +42,7 @@ struct ttyhub_subsystem {
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static struct semaphore ttyhub_subsystems_sem;
+// TODO use spinlock instead? has it be locked in interrupt/atomic state? use in_interrupt() and in_atomic()!
 
 /*
  * Probe subsystems if they can identify a received data chunk.
