@@ -36,8 +36,8 @@ struct ttyhub_subsystem {
         /* subsystem operations called by ttyhub */
         int (*open)(void); // TODO correct arguments for subsys ops
         void (*close)(void);
-        int (*probe_data)(void);
-        int (*probe_size)(void);
+        int (*probe_data)(const unsigned char *, int);
+        int (*probe_size)(const unsigned char *, int);
         int (*do_receive)(const unsigned char *, int);
 
         /* minimum bytes received before probing the submodule */
@@ -65,9 +65,35 @@ static spinlock_t ttyhub_subsystems_lock;
 static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
-        // TODO implement according to documentation
+        int i, j, subsys_remaining = 0;
+        struct ttyhub_subsystem *subs;
 
-        return 1; // TODO remove - this is only to prevent receive function from hanging
+        for (i=0; i < max_subsys; i++) {
+                subs = ttyhub_subsystems[i];
+                if (subs == NULL)
+                        continue;
+                if (state->probed_subsystems[i/8] & 1 << i%8)
+                        continue;
+                if (subs->probe_data_minimum_bytes > count) {
+                        subsys_remaining = 1;
+                        continue;
+                }
+                if (subs->probe_data(cp, count)) {
+                        state->recv_subsys = i;
+                        for (j=0; j < (max_subsys-1)/8 + 1; j++)
+                                state->probed_subsystems[j] = 0;
+                        return 0;
+                }
+                state->probed_subsystems[i/8] |= 1 << i%8;
+        }
+
+        if (!subsys_remaining) {
+                state->recv_subsys = -2;
+                for (j=0; j < (max_subsys-1)/8 + 1; j++)
+                        state->probed_subsystems[j] = 0;
+        }
+
+        return subsys_remaining;
 }
 
 static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
@@ -239,7 +265,6 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
            data to probe buffer */
         if (state->probe_buf_count)
                 ttyhub_probebuf_push(state, cp, count);
-                // TODO check num of bytes actually copied?
 
         while (1) { // TODO lock subsystem spinlock
                 if (state->recv_subsys == -1) {
