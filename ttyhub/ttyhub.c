@@ -74,6 +74,8 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                 subs = ttyhub_subsystems[i];
                 if (subs == NULL)
                         continue;
+                if (!(state->enabled_subsystems[i/8] & 1 << i%8))
+                        continue;
                 if (state->probed_subsystems[i/8] & 1 << i%8)
                         continue;
                 if (subs->probe_data_minimum_bytes > count) {
@@ -198,7 +200,7 @@ static int ttyhub_open(struct tty_struct *tty)
         state->probe_buf_consumed = 0;
         state->probe_buf_count = 0;
 
-        /* allocate 3x char array with 1 bit for each subsystem */
+        /* allocate 3x char array with 1 bit per subsystem each */
         state->probed_subsystems = kzalloc(3*((max_subsys-1)/8+1), GFP_KERNEL);
         if (state->probed_subsystems == NULL)
                 goto error_cleanup_probebuf;
