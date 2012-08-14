@@ -256,6 +256,11 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *        subsystem is unknown a set bit indicates that the subsystem
          *        has already been probed and should not be probed again.
          *   TODO describe probe_buf management related fields
+         * The state machine continues until either...
+         *   ...more data is needed for probing
+         *      --> received data is kept in the probe buffer between calls
+         *    OR
+         *   ...the probe buffer and cp are completely consumed
          */
 
         /* when cp is read partially, this is used as an offset */
@@ -268,8 +273,6 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
 
         while (1) { // TODO lock subsystem spinlock
                 if (state->recv_subsys == -1) {
-                        /* this may change recv_subsys to -2 or a nonnegative
-                           value which then gets processed immediately */
                         int status;
                         ttyhub_get_recvd_data_head(state, cp, count,
                                                 &r_cp, &r_count);
