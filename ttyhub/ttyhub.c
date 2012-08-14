@@ -26,10 +26,10 @@ struct ttyhub_state {
         unsigned char *probed_subsystems;
 
         unsigned char *probe_buf;
-        size_t probe_buf_consumed;
-        size_t probe_buf_count;
+        int probe_buf_consumed;
+        int probe_buf_count;
 
-        size_t cp_consumed;
+        int cp_consumed;
 };
 
 struct ttyhub_subsystem {
