@@ -119,14 +119,13 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
         if (state->probe_buf_consumed) {
                 /* probe buffer in use and partly consumed - pack */
                 int i;
-                int max = state->probe_buf_count - state->probe_buf_consumed;
                 int offset = state->probe_buf_consumed;
+                int max = state->probe_buf_count - offset;
                 for (i=0; i < max; i++)
                         state->probe_buf[i] = state->probe_buf[i + offset];
                 state->probe_buf_count -= offset;
                 state->probe_buf_consumed = 0;
         }
-
         room = probe_buf_size - state->probe_buf_count;
         n = count > room ? room : count;
         memcpy(state->probe_buf + state->probe_buf_count, cp, n);
@@ -163,7 +162,7 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
 }
 
 /*
- * Mark received data as consumed- advance pointers for the next read access.
+ * Mark received data as consumed - advance pointers for the next read access.
  * This is a helper function for ttyhub_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
@@ -385,7 +384,7 @@ static int __init ttyhub_init(void)
         printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe "
                 "bufsize = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
 
-        /* allocate space for pointers to subsystems and init semaphore */
+        /* allocate space for pointers to subsystems and init lock */
         ttyhub_subsystems = kzalloc(
                 sizeof(struct ttyhub_subsystem *) * max_subsys,
                 GFP_KERNEL);
