@@ -113,11 +113,12 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
                         const unsigned char *cp, int count,
                         const unsigned char **out_cp, int *out_count)
 {
-        if (state->probe_buf_count) {
+        int probe_buf_fillstate = state->probe_buf_count -
+                state->probe_buf_consumed;
+        if (probe_buf_fillstate) {
                 /* probe buffer in use */
                 *out_cp = state->probe_buf + state->probe_buf_consumed;
-                *out_count = state->probe_buf_count -
-                        state->probe_buf_consumed;
+                *out_count = probe_buf_fillstate;
         }
         else {
                 /* probe buffer not in use */
@@ -129,7 +130,7 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
 // TODO doc
 static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
 {
-        if (state->probe_buf_count)
+        if (state->probe_buf_count - state->probe_buf_consumed)
                 /* probe buffer in use */
                 state->probe_buf_consumed += count;
         else
@@ -149,7 +150,7 @@ static int ttyhub_open(struct tty_struct *tty)
 
         state->recv_subsys = -1;
 
-        /* receive probe buffer */
+        /* allocate probe buffer */
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
         if (state->probe_buf == NULL)
                 goto error_cleanup_state;
