@@ -3,7 +3,7 @@
 #include <linux/moduleparam.h>
 #include <linux/tty.h>
 #include <linux/slab.h>
-#include <linux/semaphore.h>
+#include <linux/spinlock.h>
 MODULE_LICENSE("GPL");
 
 #define TTYHUB_VERSION "0.10 pre-alpha"
@@ -24,7 +24,12 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 struct ttyhub_state {
         int recv_subsys;
         unsigned char *probed_subsystems;
+
         unsigned char *probe_buf;
+        size_t probe_buf_consumed;
+        size_t probe_buf_count;
+
+        size_t cp_consumed;
 };
 
 struct ttyhub_subsystem {
@@ -41,8 +46,7 @@ struct ttyhub_subsystem {
 
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
-static struct semaphore ttyhub_subsystems_sem;
-// TODO use spinlock instead? has it be locked in interrupt/atomic state? use in_interrupt() and in_atomic()!
+static spinlock_t ttyhub_subsystems_lock;
 
 /*
  * Probe subsystems if they can identify a received data chunk.
@@ -56,13 +60,14 @@ static struct semaphore ttyhub_subsystems_sem;
  * Returns:
  *  0   either a subsystem has identified the data or all subsystems have
  *      already been probed - state machine must continue in this call
- *  1   the received data has not been identified but may be later with
- *      more data - probe buffer has to be filled
+ *  1   the received data has not been identified - wait for more data
  */
 static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
         // TODO implement according to documentation
+
+        return 1; // TODO remove - this is only to prevent receive function from hanging
 }
 
 static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
@@ -71,35 +76,52 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
         // TODO implement + doc
 }
 
+/*
+ * Append data to probe buffer.
+ * Buffer is packed before appending when parts of the data
+ * have already been consumed.
+ *
+ * All locks to involved data structures are asssumed to be held already.
+ *
+ * Returns the number of bytes that were copied to the probe buffer.
+ */
 static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
-        // TODO implement + doc
-        //  (1) probe_buf not yet in use
-        //      we need to preserve current buffer for next call --> copy
-        //  (2) probe_buf already in use
+        int room, n;
+        if (state->probe_buf_consumed) {
+                /* probe buffer in use and partly consumed - pack */
+                int i;
+                int max = state->probe_buf_count - state->probe_buf_consumed;
+                int offset = state->probe_buf_consumed;
+                for (i=0; i < max; i++)
+                        state->probe_buf[i] = state->probe_buf[i + offset];
+                state->probe_buf_count -= offset;
+                state->probe_buf_consumed = 0;
+        }
+
+        room = probe_buf_size - state->probe_buf_count;
+        n = count > room ? room : count;
+        memcpy(state->probe_buf + state->probe_buf_count, cp, n);
+        state->probe_buf_count += n;
+        state->cp_consumed += n;
+        return n;
 }
 
 static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
                         const unsigned char *cp, int count,
                         const unsigned char **out_cp, int *out_count)
 {
-        // TODO
-        //  (1) probe_buf not in use
-        //      copy the values of cp and count to *out_cp and *out_count
-        //  (2) probe_buf not in use, but parts of cp consumed
-        //      *out_cp = cp + consumed_bytes
-        //      *out_count = count - consumed_bytes
-        //  (3) probe_buf in use (and maybe already partly consumed)
-        //      copy a pointer to the first unread byte in the probe buffer to *out_cp
-        //      and the number of valid bytes from that point on to *out_count
-        //      !!!CAUTION!!! IF THE PROBE BUFFER CONSTANTLY GETS ONLY PARTIALLY CONSUMED
-        //                    IT MIGHT RUN TO ITS END - SO COMPACT IT EVERYTIME ONLY
-        //                    A PART GETS CONSUMED
-        //  In case (3), we should copy newly received data to the probe_buf when it is
-        //  already in use! Update of consumed_bytes neccessary. When the buffer is full
-        //  and then consumed there are still received bytes remaining in
-        //  the cp buffer (count - consumed_bytes).
+        if (state->probe_buf_count) {
+                /* probe buffer in use */
+                *out_cp = state->probe_buf + state->probe_buf_consumed;
+                *out_count = state->probe_buf_count -
+                        state->probe_buf_consumed;
+        } else {
+                /* probe buffer not in use */
+                *out_cp = cp + state->cp_consumed;
+                *out_count = count - state->cp_consumed;
+        }
 }
 
 /* Line discipline open() operation */
@@ -118,6 +140,8 @@ static int ttyhub_open(struct tty_struct *tty)
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
         if (state->probe_buf == NULL)
                 goto error_cleanup_state;
+        state->probe_buf_consumed = 0;
+        state->probe_buf_count = 0;
 
         /* allocate char array with 1 bit for each subsystem */
         state->probed_subsystems = kmalloc((max_subsys-1)/8 + 1, GFP_KERNEL);
@@ -159,7 +183,7 @@ static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
 }
 
 /*
- * Line discipline ioctl() operation
+ * Line discipline receive_buf() operation
  * Called by the hardware driver when new data arrives.
  *
  * Only one call of this function is active at a time so the state
@@ -194,24 +218,37 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *        has already been probed and should not be probed again.
          *   TODO describe probe_buf management related fields
          */
-        while (1) { // TODO lock subsystem semaphore
+
+        /* when cp is read partially, this is used as an offset */
+        state->cp_consumed = 0;
+
+        /* when probe buffer is already partially filled append new incoming
+           data to probe buffer */
+        if (state->probe_buf_count)
+                ttyhub_probebuf_push(state, cp, count);
+                // TODO check num of bytes actually copied?
+
+        while (1) { // TODO lock subsystem spinlock
                 if (state->recv_subsys == -1) {
                         /* this may change recv_subsys to -2 or a nonnegative
-                           value which then gets processed in the same call */
+                           value which then gets processed immediately */
                         ttyhub_get_recvd_data_head(state, cp, count,
                                                 &r_cp, &r_count);
                         status = ttyhub_probe_subsystems(state, r_cp, r_count);
                         if (status) {
                                 /* not enough data to probe all subsystems */
-                                status = ttyhub_probebuf_push(state,
-                                        cp, count);
+                                if (state->probe_buf_count == 0)
+                                        ttyhub_probebuf_push(state,
+                                                r_cp, r_count);
+                                        // TODO check num of bytes actually copied?
                                 return;
                         }
                 }
                 if (state->recv_subsys == -2) {
-                        // TODO use ttyhub_get_recvd_data_head()
+                        ttyhub_get_recvd_data_head(state, cp, count,
+                                                &r_cp, &r_count);
                         status = ttyhub_probe_subsystems_size(state,
-                                cp, count);
+                                r_cp, r_count);
                         // TODO check return code and do something
                         // TODO when probe for size fails check if probe_buf is in use
                         //      and full
@@ -232,8 +269,9 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                         status = subs->do_receive();
                         // TODO subfunction to be called after consumption of data:
                         //      if probe buffer is in use update related data
-                        //      fields in ttyhub_state structure and compact the
-                        //      buffer it if only a part of the data has been consumed
+                        //      fields in ttyhub_state structure
+                        //      THERE MAY BE MORE DATA REMAINING IN CP EVEN IF THE
+                        //      PROBE BUFFER HAS BEEN CONSUMED COMPLETELY
                         if (status < 0) {
                                 /* subsystem expects more data */
                                 return;
@@ -279,8 +317,8 @@ static int __init ttyhub_init(void)
         if (probe_buf_size < 16)
                 probe_buf_size = 16;
 
-        printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe bufsize"
-                " = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
+        printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe "
+                "bufsize = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
 
         /* allocate space for pointers to subsystems and init semaphore */
         ttyhub_subsystems = kzalloc(
@@ -288,7 +326,7 @@ static int __init ttyhub_init(void)
                 GFP_KERNEL);
         if (ttyhub_subsystems == NULL)
                 return -ENOMEM;
-        sema_init(&ttyhub_subsystems_sem, 1);
+        spin_lock_init(&ttyhub_subsystems_lock);
 
         /* register line discipline */
         status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc); // TODO dynamic LDISC nr
