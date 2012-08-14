@@ -106,6 +106,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
  * Append data to probe buffer.
  * Buffer is packed before appending when parts of the data
  * have already been consumed.
+ * This is a helper function for ttyhub_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
  *
@@ -134,7 +135,15 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
         return n;
 }
 
-// TODO doc
+/*
+ * Get pointer to and length of received data.
+ * This gets either a pointer to the probe buffer read head (when it is at
+ * least partially filled) or a pointer to unread data in cp. The amount of
+ * consumed data is considered for both situations.
+ * This is a helper function for ttyhub_receive_buf().
+ *
+ * All locks to involved data structures are asssumed to be held already.
+ */
 static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
                         const unsigned char *cp, int count,
                         const unsigned char **out_cp, int *out_count)
@@ -153,7 +162,12 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
         }
 }
 
-// TODO doc
+/*
+ * Mark received data as consumed- advance pointers for the next read access.
+ * This is a helper function for ttyhub_receive_buf().
+ *
+ * All locks to involved data structures are asssumed to be held already.
+ */
 static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
 {
         if (state->probe_buf_count - state->probe_buf_consumed)
@@ -278,7 +292,7 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                                                 &r_cp, &r_count);
                         status = ttyhub_probe_subsystems(state, r_cp, r_count);
                         if (status) {
-                                /* wait for more data to probe more subsystems */
+                                /* wait for data to probe more subsystems */
                                 if (state->probe_buf_count == 0)
                                         ttyhub_probebuf_push(state,
                                                 r_cp, r_count);
