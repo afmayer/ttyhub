@@ -24,6 +24,8 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 struct ttyhub_state {
         int recv_subsys;
         unsigned char *probed_subsystems;
+        unsigned char *size_probed_subsystems;
+        unsigned char *enabled_subsystems;
 
         unsigned char *probe_buf;
         int probe_buf_consumed;
@@ -196,10 +198,14 @@ static int ttyhub_open(struct tty_struct *tty)
         state->probe_buf_consumed = 0;
         state->probe_buf_count = 0;
 
-        /* allocate char array with 1 bit for each subsystem */
-        state->probed_subsystems = kmalloc((max_subsys-1)/8 + 1, GFP_KERNEL);
+        /* allocate 3x char array with 1 bit for each subsystem */
+        state->probed_subsystems = kzalloc(3*((max_subsys-1)/8+1), GFP_KERNEL);
         if (state->probed_subsystems == NULL)
                 goto error_cleanup_probebuf;
+        state->size_probed_subsystems = state->probed_subsystems +
+                (max_subsys-1)/8 + 1;
+        state->enabled_subsystems = state->probed_subsystems +
+                2 * ((max_subsys-1)/8 + 1);
 
         /* success */
         tty->disc_data = state;
