@@ -44,6 +44,9 @@ struct ttyhub_subsystem {
 
         /* minimum bytes received before probing the submodule */
         int probe_data_minimum_bytes;
+
+        /* nonzero while subsystem may not be unregistered */
+        int in_use;
 };
 
 
@@ -65,6 +68,7 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
                 goto error_unlock;
 
         ttyhub_subsystems[i] = subs;
+        subs->in_use = 0;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         return i;
 
