@@ -24,8 +24,8 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 struct ttyhub_state {
         int recv_subsys;
         unsigned char *probed_subsystems;
-        unsigned char *size_probed_subsystems;
         unsigned char *enabled_subsystems;
+        int discard_bytes_remaining;
 
         unsigned char *probe_buf;
         int probe_buf_consumed;
@@ -83,6 +83,7 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         continue;
                 }
                 if (subs->probe_data(cp, count)) {
+                        /* data identified by subsystem */
                         state->recv_subsys = i;
                         for (j=0; j < (max_subsys-1)/8 + 1; j++)
                                 state->probed_subsystems[j] = 0;
@@ -100,10 +101,49 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
         return subsys_remaining;
 }
 
+// TODO doc
 static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
-        // TODO implement + doc
+        int i, status, probe_buf_room;
+        struct ttyhub_subsystem *subs;
+
+        for (i=0; i < max_subsys; i++) {
+                subs = ttyhub_subsystems[i];
+                if (subs == NULL)
+                        continue;
+                if (!(state->enabled_subsystems[i/8] & 1 << i%8))
+                        continue;
+                status = subs->probe_size(cp, count);
+                if (status > 0) {
+                        /* size recognized */
+                        state->recv_subsys = -3;
+                        state->discard_bytes_remaining = status;
+                        return 0;
+                }
+                else if (status == 0) {
+                        /* size not recognized */
+                        continue;
+                }
+                //else {
+                // TODO size not recognized but subsystem can identify
+                //      end of data - implement! (set recv_subsys to i)
+                //}
+        }
+
+        probe_buf_room = probe_buf_size - state->probe_buf_count +
+                state->probe_buf_consumed;
+        if ((state->probe_buf_count - state->probe_buf_consumed == 0 &&
+                count >= probe_buf_size) || probe_buf_room == 0) {
+                /* no more space in the probe buffer to wait for more data (or
+                   probe buffer is unused but received data is larger than
+                   the probe buffer) */
+                // TODO activate timed drop packet mode
+                return 0;
+        }
+
+        /* wait for more data when there is still space */
+        return 1;
 }
 
 /*
@@ -192,6 +232,7 @@ static int ttyhub_open(struct tty_struct *tty)
                 goto error_exit;
 
         state->recv_subsys = -1;
+        state->discard_bytes_remaining = 0;
 
         /* allocate probe buffer */
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
@@ -200,14 +241,12 @@ static int ttyhub_open(struct tty_struct *tty)
         state->probe_buf_consumed = 0;
         state->probe_buf_count = 0;
 
-        /* allocate 3x char array with 1 bit per subsystem each */
-        state->probed_subsystems = kzalloc(3*((max_subsys-1)/8+1), GFP_KERNEL);
+        /* allocate 2x char array with 1 bit per subsystem each */
+        state->probed_subsystems = kzalloc(2*((max_subsys-1)/8+1), GFP_KERNEL);
         if (state->probed_subsystems == NULL)
                 goto error_cleanup_probebuf;
-        state->size_probed_subsystems = state->probed_subsystems +
-                (max_subsys-1)/8 + 1;
         state->enabled_subsystems = state->probed_subsystems +
-                2 * ((max_subsys-1)/8 + 1);
+                (max_subsys-1)/8 + 1;
 
         /* success */
         tty->disc_data = state;
@@ -270,12 +309,18 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *              addressed subsystem is unknown and has to be probed
          *        value -2:
          *              addressed subsystem is unknown and all registered
-         *              subsystems have already been probed
+         *              subsystems have already been probed - probe for size
+         *        value -3:
+         *              addressed subsystem is unknown, size of packet has
+         *              been recognized
          *   2) probed_subsystems
          *        This is a pointer to an unsigned char array containing one
          *        bit for every possible subsystem. When the addressed
          *        subsystem is unknown a set bit indicates that the subsystem
          *        has already been probed and should not be probed again.
+         *   3) discard_bytes_remaining
+         *        When recv_subsys is -3 this stores the number of bytes to
+         *        be discarded. Decremented after data has been received.
          *   TODO describe probe_buf management related fields
          * The state machine continues until either...
          *   ...more data is needed for probing
@@ -325,6 +370,17 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                         //            more data and then retry
                         //          - this is the only place where we have to check for a full buffer
                         //            because in the end we always come here (!!!CHECK!!!)
+                }
+                if (state->recv_subsys == -3) {
+                        int n;
+                        ttyhub_get_recvd_data_head(state, cp, count,
+                                                &r_cp, &r_count);
+                        n = r_count > state->discard_bytes_remaining ?
+                                state->discard_bytes_remaining : r_count;
+                        ttyhub_recvd_data_consumed(state, n);
+                        state->discard_bytes_remaining -= n;
+                        if (state->discard_bytes_remaining == 0)
+                                state->recv_subsys = -1;
                 }
                 if (state->recv_subsys >= 0) {
                         int n;
