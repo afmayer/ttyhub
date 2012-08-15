@@ -101,7 +101,23 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
         return subsys_remaining;
 }
 
-// TODO doc
+/*
+ * Probe subsystems if they can identify the size of a received data chunk.
+ * The recv_subsys and discard_bytes_remaining fields of the ttyhub_state 
+ * structure are changed according to the probe results, but the probe buffer
+ * is not filled in case more data is needed.
+ * This is a helper function for ttyhub_receive_buf().
+ *
+ * All locks to involved data structures are asssumed to be held already.
+ *
+ * Returns:
+ *  0   either a subsystem has identified the size or the probe buffer is
+ *      full - state machine must continue in this call
+ *  1   the received data has not been identified and there is still space
+ *      in the probe buffer left - wait for more data
+ */
+// TODO when timed drop packet mode is implemented change documentation
+//      (an additional field in the state is changed)
 static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
@@ -134,7 +150,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
         probe_buf_room = probe_buf_size - state->probe_buf_count +
                 state->probe_buf_consumed;
         if ((state->probe_buf_count - state->probe_buf_consumed == 0 &&
-                count >= probe_buf_size) || probe_buf_room == 0) {
+                        count >= probe_buf_size) || probe_buf_room == 0) {
                 /* no more space in the probe buffer to wait for more data (or
                    probe buffer is unused but received data is larger than
                    the probe buffer) */
@@ -142,7 +158,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                 return 0;
         }
 
-        /* wait for more data when there is still space */
+        /* wait for more data - there is still space in the probe buffer */
         return 1;
 }
 
@@ -353,11 +369,11 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                         }
                 }
                 if (state->recv_subsys == -2) {
-                        int status;
                         ttyhub_get_recvd_data_head(state, cp, count,
                                                 &r_cp, &r_count);
-                        status = ttyhub_probe_subsystems_size(state,
-                                r_cp, r_count);
+                        if (ttyhub_probe_subsystems_size(state,
+                                                r_cp, r_count)) {
+                        }
                         // TODO check return code and do something
                         // TODO when probe for size fails check if probe_buf is in use
                         //      and full
