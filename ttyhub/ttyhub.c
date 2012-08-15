@@ -373,19 +373,11 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                                                 &r_cp, &r_count);
                         if (ttyhub_probe_subsystems_size(state,
                                                 r_cp, r_count)) {
+                                /* wait for data to probe more subsystems */
+                                if (state->probe_buf_count == 0)
+                                        ttyhub_probebuf_push(state,
+                                                r_cp, r_count);
                         }
-                        // TODO check return code and do something
-                        // TODO when probe for size fails check if probe_buf is in use
-                        //      and full
-                        //          - if unused only copy to probe_buf and wait for more
-                        //            data when there is less data than fits in the buffer
-                        //            otherwise handle same as if full
-                        //          - if full maybe try to drop based on tty rcv idle time,
-                        //            but generally speaking, this is not good
-                        //          - when there is still space in the probe_buf wait for
-                        //            more data and then retry
-                        //          - this is the only place where we have to check for a full buffer
-                        //            because in the end we always come here (!!!CHECK!!!)
                 }
                 if (state->recv_subsys == -3) {
                         int n;
