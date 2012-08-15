@@ -35,6 +35,8 @@ struct ttyhub_state {
 };
 
 struct ttyhub_subsystem {
+        char *name;
+
         /* subsystem operations called by ttyhub */
         int (*open)(void); // TODO correct arguments for subsys ops
         void (*close)(void);
@@ -73,6 +75,8 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         ttyhub_subsystems[i] = subs;
         subs->refcount = 0;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
+                subs->name, i);
         return i;
 
 error_unlock:
@@ -81,6 +85,7 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
 
+// TODO doc
 int ttyhub_unregister_subsystem(int index)
 {
         unsigned long flags;
@@ -97,6 +102,7 @@ int ttyhub_unregister_subsystem(int index)
                 goto error_unlock;
         ttyhub_subsystems[index] = NULL;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        printk(KERN_INFO "TTYHUB: unregistered subsystem '%s'\n", subs->name);
         return 0;
 
 error_unlock:
