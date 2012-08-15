@@ -85,7 +85,10 @@ EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
  * but the probe buffer is not filled in case more data is needed.
  * This is a helper function for ttyhub_receive_buf().
  *
- * All locks to involved data structures are asssumed to be held already.
+ * Locks:
+ *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
+ *      for an entry to probe, but not while probing the subsystem. Instead,
+ *      the in_use flag for the subsystem is set while probing.
  *
  * Returns:
  *  0   either a subsystem has identified the data or all subsystems have
@@ -95,9 +98,11 @@ EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
 static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
+        unsigned long flags;
         int i, j, subsys_remaining = 0;
         struct ttyhub_subsystem *subs;
 
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         for (i=0; i < max_subsys; i++) {
                 subs = ttyhub_subsystems[i];
                 if (subs == NULL)
@@ -110,6 +115,8 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         subsys_remaining = 1;
                         continue;
                 }
+                subs->in_use = 1;
+                spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 if (subs->probe_data(cp, count)) {
                         /* data identified by subsystem */
                         state->recv_subsys = i;
@@ -117,9 +124,12 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                                 state->probed_subsystems[j] = 0;
                         return 0;
                 }
+                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+                subs->in_use = 0;
                 state->probed_subsystems[i/8] |= 1 << i%8;
         }
 
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         if (!subsys_remaining) {
                 state->recv_subsys = -2;
                 for (j=0; j < (max_subsys-1)/8 + 1; j++)
@@ -136,7 +146,10 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
  * is not filled in case more data is needed.
  * This is a helper function for ttyhub_receive_buf().
  *
- * All locks to involved data structures are asssumed to be held already.
+ * Locks:
+ *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
+ *      for an entry to probe, but not while probing the subsystem. Instead,
+ *      the in_use flag for the subsystem is set while probing.
  *
  * Returns:
  *  0   either a subsystem has identified the size or the probe buffer is
@@ -149,31 +162,36 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
 static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
+        unsigned long flags;
         int i, status, probe_buf_room;
         struct ttyhub_subsystem *subs;
 
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         for (i=0; i < max_subsys; i++) {
                 subs = ttyhub_subsystems[i];
                 if (subs == NULL)
                         continue;
                 if (!(state->enabled_subsystems[i/8] & 1 << i%8))
                         continue;
+                subs->in_use = 1;
+                spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 status = subs->probe_size(cp, count);
+                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+                subs->in_use = 0;
                 if (status > 0) {
                         /* size recognized */
                         state->recv_subsys = -3;
                         state->discard_bytes_remaining = status;
+                        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                         return 0;
                 }
-                else if (status == 0) {
-                        /* size not recognized */
-                        continue;
+                else if (status < 0) {
+                        // TODO size not recognized but subsystem can identify
+                        //      end of data - implement! (set recv_subsys to i)
+                        //      WHEN RETURNING DONT FORGET TO UNLOCK
                 }
-                //else {
-                // TODO size not recognized but subsystem can identify
-                //      end of data - implement! (set recv_subsys to i)
-                //}
         }
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
         probe_buf_room = probe_buf_size - state->probe_buf_count +
                 state->probe_buf_consumed;
