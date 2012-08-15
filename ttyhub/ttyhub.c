@@ -50,6 +50,36 @@ struct ttyhub_subsystem {
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
 
+int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
+{
+        unsigned long flags;
+        int i, err = -ENOBUFS;
+
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        for (i=0; i < max_subsys; i++) {
+                if (ttyhub_subsystems[i] == NULL)
+                        break;
+        }
+
+        if (i == max_subsys)
+                /* no more space for this subsystem */
+                goto error_unlock;
+
+        ttyhub_subsystems[i] =
+                kmalloc(sizeof(**ttyhub_subsystems), GFP_KERNEL);
+        if (ttyhub_subsystems[i] == NULL)
+                goto error_unlock;
+
+        memcpy(ttyhub_subsystems[i], subs, sizeof(**ttyhub_subsystems));
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return i;
+
+error_unlock:
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return err;
+}
+EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
+
 /*
  * Probe subsystems if they can identify a received data chunk.
  * The recv_subsys field and the array pointed to by probed_subsystems
