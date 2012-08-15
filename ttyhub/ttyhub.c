@@ -53,6 +53,7 @@ struct ttyhub_subsystem {
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
 
+// TODO doc
 int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
 {
         unsigned long flags;
@@ -78,6 +79,29 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
 
+int ttyhub_unregister_subsystem(int index)
+{
+        unsigned long flags;
+        struct ttyhub_subsystem *subs;
+
+        if (index >= max_subsys  || index < 0)
+                return -1;
+
+        subs = ttyhub_subsystems[index];
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        if (subs == NULL)
+                goto error_unlock;
+        if (subs->in_use)
+                goto error_unlock;
+        ttyhub_subsystems[index] = NULL;
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return 0;
+
+error_unlock:
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return -1;
+}
+EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 /*
  * Probe subsystems if they can identify a received data chunk.
  * The recv_subsys field and the array pointed to by probed_subsystems
@@ -119,6 +143,9 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 if (subs->probe_data(cp, count)) {
                         /* data identified by subsystem */
+                        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+                        subs->in_use = 0;
+                        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                         state->recv_subsys = i;
                         for (j=0; j < (max_subsys-1)/8 + 1; j++)
                                 state->probed_subsystems[j] = 0;
