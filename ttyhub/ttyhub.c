@@ -47,6 +47,8 @@ struct ttyhub_subsystem {
 
         /* nonzero while subsystem may not be unregistered */
         int refcount;
+        // TODO increase refcount when subsystem is enabled on a tty
+        //      decrease refcount when subsystem is disabled on a tty (or closed)
 };
 
 
@@ -91,7 +93,7 @@ int ttyhub_unregister_subsystem(int index)
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         if (subs == NULL)
                 goto error_unlock;
-        if (subs->refcount)
+        if (subs->refcount != 0)
                 goto error_unlock;
         ttyhub_subsystems[index] = NULL;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
@@ -111,8 +113,7 @@ EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
  *
  * Locks:
  *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
- *      for an entry to probe, but not while probing the subsystem. Instead,
- *      the refcount for the subsystem is increased while probing.
+ *      for an entry to probe, but not while probing the subsystem.
  *
  * Returns:
  *  0   either a subsystem has identified the data or all subsystems have
@@ -139,21 +140,16 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         subsys_remaining = 1;
                         continue;
                 }
-                subs->refcount++;
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 if (subs->probe_data(cp, count)) {
                         /* data identified by subsystem */
-                        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
-                        subs->refcount--;
-                        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                         state->recv_subsys = i;
                         for (j=0; j < (max_subsys-1)/8 + 1; j++)
                                 state->probed_subsystems[j] = 0;
                         return 0;
                 }
-                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
-                subs->refcount--;
                 state->probed_subsystems[i/8] |= 1 << i%8;
+                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         }
 
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
@@ -175,8 +171,7 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
  *
  * Locks:
  *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
- *      for an entry to probe, but not while probing the subsystem. Instead,
- *      the refcount for the subsystem is increased while probing.
+ *      for an entry to probe, but not while probing the subsystem.
  *
  * Returns:
  *  0   either a subsystem has identified the size or the probe buffer is
@@ -200,11 +195,8 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         continue;
                 if (!(state->enabled_subsystems[i/8] & 1 << i%8))
                         continue;
-                subs->refcount++;
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 status = subs->probe_size(cp, count);
-                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
-                subs->refcount--;
                 if (status > 0) {
                         /* size recognized */
                         state->recv_subsys = -3;
@@ -217,6 +209,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         //      end of data - implement! (set recv_subsys to i)
                         //      WHEN RETURNING DONT FORGET TO UNLOCK
                 }
+                spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         }
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
