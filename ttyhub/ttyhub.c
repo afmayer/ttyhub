@@ -63,6 +63,11 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         unsigned long flags;
         int i;
 
+        /* when a subsystem is registered the ttyhub module
+           may not be unloaded */
+        if (!try_module_get(THIS_MODULE))
+                return -1;
+
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         for (i=0; i < max_subsys; i++) {
                 if (ttyhub_subsystems[i] == NULL)
@@ -70,7 +75,7 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         }
         if (i == max_subsys)
                 /* no more space for this subsystem */
-                goto error_unlock;
+                goto error_unlock_putmodule;
 
         ttyhub_subsystems[i] = subs;
         subs->refcount = 0;
@@ -79,8 +84,9 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
                 subs->name, i);
         return i;
 
-error_unlock:
+error_unlock_putmodule:
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        module_put(THIS_MODULE);
         return -1;
 }
 EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
@@ -102,6 +108,7 @@ int ttyhub_unregister_subsystem(int index)
                 goto error_unlock;
         ttyhub_subsystems[index] = NULL;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        module_put(THIS_MODULE);
         printk(KERN_INFO "TTYHUB: unregistered subsystem '%s'\n", subs->name);
         return 0;
 
