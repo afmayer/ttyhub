@@ -378,6 +378,8 @@ static void ttyhub_close(struct tty_struct *tty)
         if (state == NULL)
                 return;
 
+        // TODO disable all subsystems on this tty!
+
         if (state->probed_subsystems != NULL)
                 kfree(state->probed_subsystems);
         if (state->probe_buf != NULL)
