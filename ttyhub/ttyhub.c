@@ -22,6 +22,8 @@ module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
 struct ttyhub_state {
+        spinlock_t lock;
+
         int recv_subsys;
         unsigned char *probed_subsystems;
         unsigned char *enabled_subsystems;
@@ -36,6 +38,7 @@ struct ttyhub_state {
 
 struct ttyhub_subsystem {
         char *name;
+        struct module *owner;
 
         /* subsystem operations called by ttyhub */
         int (*open)(void); // TODO correct arguments for subsys ops
@@ -117,6 +120,17 @@ error_unlock:
         return -1;
 }
 EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
+
+static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
+{
+        // TODO implement + doc
+}
+
+static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
+{
+        // TODO implement + doc
+}
+
 /*
  * Probe subsystems if they can identify a received data chunk.
  * The recv_subsys field and the array pointed to by probed_subsystems
@@ -326,6 +340,7 @@ static int ttyhub_open(struct tty_struct *tty)
         if (state == NULL)
                 goto error_exit;
 
+        spin_lock_init(&state->lock);
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
 
@@ -381,8 +396,9 @@ static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
  * Line discipline receive_buf() operation
  * Called by the hardware driver when new data arrives.
  *
- * Only one call of this function is active at a time so the state
- * machine needs no explicit lock.
+ * Locks:
+ *      The ttyhub state's lock is held here. Functions called here
+ *      may lock the subsystems lock.
  */
 static void ttyhub_receive_buf(struct tty_struct *tty,
                         const unsigned char *cp, char *fp, int count)
@@ -390,6 +406,7 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
         struct ttyhub_state *state = tty->disc_data;
         const unsigned char *r_cp;
         int r_count;
+        unsigned long flags;
 
         // TODO conditional output if debug var set
         printk(KERN_INFO "ttyhub_receive_buf() called with count=%d\n", count);
@@ -424,6 +441,8 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
          *   ...the probe buffer and cp are completely consumed
          */
 
+        spin_lock_irqsave(&state->lock, flags);
+
         /* when cp is read partially, this is used as an offset */
         state->cp_consumed = 0;
 
@@ -432,7 +451,7 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
         if (state->probe_buf_count)
                 ttyhub_probebuf_push(state, cp, count);
 
-        while (1) { // TODO lock subsystem spinlock
+        while (1) {
                 if (state->recv_subsys == -1) {
                         int status;
                         ttyhub_get_recvd_data_head(state, cp, count,
@@ -444,7 +463,7 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                                         ttyhub_probebuf_push(state,
                                                 r_cp, r_count);
                                         // TODO check num of bytes actually copied?
-                                return;
+                                goto state_unlock_exit;
                         }
                 }
                 if (state->recv_subsys == -2) {
@@ -498,9 +517,12 @@ static void ttyhub_receive_buf(struct tty_struct *tty,
                         if (state->cp_consumed == count &&
                                 state->probe_buf_count ==
                                 state->probe_buf_consumed)
-                                return;
+                                goto state_unlock_exit;
                 }
         }
+state_unlock_exit:
+        spin_unlock_irqrestore(&state->lock, flags);
+        return;
 }
 
 static void ttyhub_write_wakeup(struct tty_struct *tty)
