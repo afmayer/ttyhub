@@ -331,7 +331,7 @@ static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
 }
 
 /* Line discipline open() operation */
-static int ttyhub_open(struct tty_struct *tty)
+static int ttyhub_ldisc_open(struct tty_struct *tty)
 {
         struct ttyhub_state *state;
         int err = -ENOBUFS;
@@ -371,7 +371,7 @@ error_exit:
 }
 
 /* Line discipline close() operation */
-static void ttyhub_close(struct tty_struct *tty)
+static void ttyhub_ldisc_close(struct tty_struct *tty)
 {
         struct ttyhub_state *state = tty->disc_data;
 
@@ -388,7 +388,7 @@ static void ttyhub_close(struct tty_struct *tty)
 }
 
 /* Line discipline ioctl() operation */
-static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
+static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         unsigned int cmd, unsigned long arg)
 {
         return -ENOTTY;
@@ -402,7 +402,7 @@ static int ttyhub_ioctl(struct tty_struct *tty, struct file *filp,
  *      The ttyhub state's lock is held here. Functions called here
  *      may lock the subsystems lock.
  */
-static void ttyhub_receive_buf(struct tty_struct *tty,
+static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         const unsigned char *cp, char *fp, int count)
 {
         struct ttyhub_state *state = tty->disc_data;
@@ -527,7 +527,7 @@ state_unlock_exit:
         return;
 }
 
-static void ttyhub_write_wakeup(struct tty_struct *tty)
+static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
 {
         //int written = tty->ops->write(tty, pointer_to_first_buffer_byte, bytes_in_buffer);
         // TODO update buffer pointer, bytes_in_buffer
@@ -538,11 +538,11 @@ struct tty_ldisc_ops ttyhub_ldisc =
         .owner        = THIS_MODULE,
         .magic        = TTY_LDISC_MAGIC,
         .name         = "ttyhub",
-        .open         = ttyhub_open,
-        .close        = ttyhub_close,
-        .ioctl        = ttyhub_ioctl,
-        .receive_buf  = ttyhub_receive_buf,
-        .write_wakeup = ttyhub_write_wakeup
+        .open         = ttyhub_ldisc_open,
+        .close        = ttyhub_ldisc_close,
+        .ioctl        = ttyhub_ldisc_ioctl,
+        .receive_buf  = ttyhub_ldisc_receive_buf,
+        .write_wakeup = ttyhub_ldisc_write_wakeup
 };
 
 /* module init/exit functions */
