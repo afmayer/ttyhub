@@ -21,6 +21,10 @@ static int probe_buf_size = 32;
 module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
+
+// TODO List what is protected by ttyhub_subsystems_lock
+//      e.g. state->in_use, state->enabled_subsystems, subsystems list, subsys->refcount
+
 enum ttyhub_state_inuse {
         TTYHUB_STATE_INUSE_IDLE = 0,
         TTYHUB_STATE_INUSE_ACTIVE,
@@ -62,8 +66,7 @@ struct ttyhub_subsystem {
         /* nonzero while subsystem may not be unregistered - counts how many
            ttys have this subsystem enabled */
         int enabled_refcount;
-        // TODO increase enabled_refcount when subsystem is enabled on a tty
-        //      decrease enabled_refcount when subsystem is disabled on a tty (or closed)
+
 };
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
@@ -130,6 +133,18 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 
+// TODO implement + doc
+static int ttyhub_inc_subsystem_refcount(int index)
+{
+        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
+}
+
+// TODO implement + doc
+static int ttyhub_dec_subsystem_refcount(int index)
+{
+        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
+}
+
 // TODO doc
 static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 {
@@ -167,6 +182,7 @@ static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
         if (!(state->enabled_subsystems[index/8] & 1 << index%8))
                 goto error_unlock;
         // TODO implement
+        // TODO decrease enabled_refcount when subsystem is disabled on a tty (or closed)
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         module_put(ttyhub_subsystems[index]->owner);
         return 0;
