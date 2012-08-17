@@ -37,6 +37,7 @@ enum ttyhub_state_inuse {
 
 struct ttyhub_state {
         // TODO private data pointer for subsystems
+        enum ttyhub_state_inuse in_use;
 
         int recv_subsys;
         unsigned char *probed_subsystems;
@@ -68,7 +69,6 @@ struct ttyhub_subsystem {
            ttys have this subsystem enabled */
         int enabled_refcount;
         int active_refcount;
-        enum ttyhub_state_inuse in_use;
         wait_queue_head_t procs_waiting_for_close;
 };
 
@@ -98,7 +98,6 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         ttyhub_subsystems[i] = subs;
         subs->enabled_refcount = 0;
         subs->active_refcount = 0;
-        subs->in_use = TTYHUB_STATE_INUSE_IDLE;
         init_waitqueue_head(&subs->procs_waiting_for_close);
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
@@ -395,6 +394,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         if (state == NULL)
                 goto error_exit;
 
+        state->in_use = TTYHUB_STATE_INUSE_IDLE;
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
 
