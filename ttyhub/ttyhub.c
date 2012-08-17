@@ -24,7 +24,7 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
-//           subsys->enabled_refcount, subsys->active_refcount, subsys->in_use,
+//           subsys->enabled_refcount, state->in_use,
 //           subsys->procs_waiting_for_close
 
 enum ttyhub_state_inuse {
@@ -68,8 +68,7 @@ struct ttyhub_subsystem {
         /* nonzero while subsystem may not be unregistered - counts how many
            ttys have this subsystem enabled */
         int enabled_refcount;
-        int active_refcount;
-        wait_queue_head_t procs_waiting_for_close;
+        wait_queue_head_t procs_waiting_for_close; // TODO move this to ttyhub state
 };
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
@@ -97,7 +96,6 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
 
         ttyhub_subsystems[i] = subs;
         subs->enabled_refcount = 0;
-        subs->active_refcount = 0;
         init_waitqueue_head(&subs->procs_waiting_for_close);
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
