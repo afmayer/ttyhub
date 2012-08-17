@@ -29,7 +29,6 @@ enum ttyhub_state_inuse {
 };
 
 struct ttyhub_state {
-        spinlock_t lock;
         enum ttyhub_state_inuse in_use;
 
         int recv_subsys;
@@ -348,7 +347,6 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         if (state == NULL)
                 goto error_exit;
 
-        spin_lock_init(&state->lock);
         state->in_use = TTYHUB_STATE_INUSE_IDLE;
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
@@ -408,8 +406,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
  * Called by the hardware driver when new data arrives.
  *
  * Locks:
- *      The ttyhub state's lock is held here. Functions called here
- *      may lock the subsystems lock.
+ *      Functions called here may lock the subsystems lock.
  */
 static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         const unsigned char *cp, char *fp, int count)
@@ -417,7 +414,6 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         struct ttyhub_state *state = tty->disc_data;
         const unsigned char *r_cp;
         int r_count;
-        unsigned long flags;
 
         // TODO conditional output if debug var set
         printk(KERN_INFO "ttyhub_receive_buf() called with count=%d\n", count);
@@ -452,8 +448,6 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
          *   ...the probe buffer and cp are completely consumed
          */
 
-        spin_lock_irqsave(&state->lock, flags);
-
         /* when cp is read partially, this is used as an offset */
         state->cp_consumed = 0;
 
@@ -474,7 +468,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                         ttyhub_probebuf_push(state,
                                                 r_cp, r_count);
                                         // TODO check num of bytes actually copied?
-                                goto state_unlock_exit;
+                                return;
                         }
                 }
                 if (state->recv_subsys == -2) {
@@ -528,12 +522,9 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         if (state->cp_consumed == count &&
                                 state->probe_buf_count ==
                                 state->probe_buf_consumed)
-                                goto state_unlock_exit;
+                                return;
                 }
         }
-state_unlock_exit:
-        spin_unlock_irqrestore(&state->lock, flags);
-        return;
 }
 
 static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
