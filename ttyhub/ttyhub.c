@@ -68,7 +68,19 @@ struct ttyhub_subsystem {
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
 
-// TODO doc
+/*
+ * Register a new subsystem.
+ * The subsystem structure passed to this function is owned by the caller
+ * and may not be modified from the outside once it is registered.
+ *
+ * Locks:
+ *      The subsystems lock (ttyhub_subsystems_lock) is held searching for
+ *      a free index and inserting the subsystem to the list.
+ *
+ * Returns:
+ *      On success the index of the registered subsystem is returned. When
+ *      an error occurs -1 is returned.
+ */
 int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
 {
         unsigned long flags;
