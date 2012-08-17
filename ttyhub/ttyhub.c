@@ -107,7 +107,7 @@ int ttyhub_unregister_subsystem(int index)
         unsigned long flags;
         struct ttyhub_subsystem *subs;
 
-        if (index >= max_subsys  || index < 0)
+        if (index >= max_subsys || index < 0)
                 return -1;
 
         subs = ttyhub_subsystems[index];
@@ -128,14 +128,50 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 
+// TODO doc
 static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 {
-        // TODO implement + doc
+        unsigned long flags;
+
+        if (index >= max_subsys || index < 0)
+                return -1;
+
+        if (!try_module_get(ttyhub_subsystems[index]->owner))
+                return -1;
+
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        if (state->enabled_subsystems[index/8] & 1 << index%8)
+                goto error_unlock;
+        ttyhub_subsystems[index]->refcount++;
+        state->enabled_subsystems[index/8] |= 1 << index%8;
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return 0;
+
+error_unlock_putmodule:
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        module_put(ttyhub_subsystems[index]->owner);
+        return -1;
 }
 
+// TODO doc
 static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
 {
-        // TODO implement + doc
+        unsigned long flags;
+
+        if (index >= max_subsys || index < 0)
+                return -1;
+
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        if (!(state->enabled_subsystems[index/8] & 1 << index%8))
+                goto error_unlock;
+        // TODO implement
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        module_put(ttyhub_subsystems[index]->owner);
+        return 0;
+
+error_unlock:
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+        return -1;
 }
 
 /*
