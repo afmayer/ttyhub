@@ -25,10 +25,12 @@ enum ttyhub_state_inuse {
         TTYHUB_STATE_INUSE_IDLE = 0,
         TTYHUB_STATE_INUSE_ACTIVE,
         TTYHUB_STATE_INUSE_CLOSE_REQ,
+        TTYHUB_STATE_INUSE_FAST_CLOSE_REQ,
         TTYHUB_STATE_INUSE_CLOSE_GRANTED
 };
 
 struct ttyhub_state {
+        // TODO private data pointer for subsystems
         enum ttyhub_state_inuse in_use;
 
         int recv_subsys;
@@ -50,7 +52,7 @@ struct ttyhub_subsystem {
         /* subsystem operations called by ttyhub */
         int (*open)(void); // TODO correct arguments for subsys ops
         void (*close)(void);
-        int (*probe_data)(const unsigned char *, int);
+        int (*probe_data)(const unsigned char *, int); // TODO pass private data to subsys ops
         int (*probe_size)(const unsigned char *, int);
         int (*do_receive)(const unsigned char *, int);
 
@@ -63,7 +65,6 @@ struct ttyhub_subsystem {
         // TODO increase enabled_refcount when subsystem is enabled on a tty
         //      decrease enabled_refcount when subsystem is disabled on a tty (or closed)
 };
-
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
