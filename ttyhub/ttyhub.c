@@ -481,11 +481,27 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         kfree(state);
 }
 
+// TODO move IOCTL command definitions to header file
+#define TTYHUB_SUBSYS_ENABLE _IOW(0xFF, 1, int)
+
 /* Line discipline ioctl() operation */
 static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         unsigned int cmd, unsigned long arg)
 {
-        return -ENOTTY;
+        int index;
+        struct ttyhub_state *state = tty->disc_data;
+
+        switch (cmd) {
+        case TTYHUB_SUBSYS_ENABLE:
+                /* enable subsystem */
+                if (!access_ok(VERIFY_READ, (void __user *)arg, sizeof(int)))
+                        return -EFAULT;
+                if (copy_from_user(&index, (void __user *)arg, sizeof(index)))
+                        return -EFAULT;
+                return ttyhub_subsystem_enable(state, index);
+        default:
+                return -ENOTTY;
+        }
 }
 
 /*
