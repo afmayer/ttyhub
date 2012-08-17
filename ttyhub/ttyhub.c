@@ -155,38 +155,53 @@ static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
         if (index >= max_subsys || index < 0)
                 return -EINVAL;
 
-        if (!try_module_get(subs->owner))
-                return -EBUSY;
-
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+
+        if (subs == NULL) {
+                err = -EINVAL;
+                goto error_unlock;
+        }
+        if (!try_module_get(subs->owner)) {
+                err = -EBUSY;
+                goto error_unlock;
+        }
+
         if (subs->enable_in_progress) {
                 err = -EBUSY;
-                goto error_unlock_putmodule;
+                goto error_putmodule;
         }
         subs->enable_in_progress = 1;
         if (state->enabled_subsystems[index/8] & 1 << index%8) {
                 err = -EINVAL;
-                goto error_unlock_putmodule;
+                goto error_putmodule;
         }
+
+        /* prevent subsystem unregistering while enable is in progress */
+        subs->enabled_refcount++;
+
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
+        /* invoking the subsystem's open() operation must happen before
+           the bit in the enabled_subsystems array is set */
         if (subs->open)
                 err = subs->open(&state->subsys_data, state->tty);
         if (err < 0)
-                goto error_putmodule;
+                goto error_decr_refcount;
 
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
-        subs->enabled_refcount++;
         state->enabled_subsystems[index/8] |= 1 << index%8;
         subs->enable_in_progress = 0;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
         return err;
 
-error_unlock_putmodule:
-        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+error_decr_refcount:
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        subs->enabled_refcount--;
 error_putmodule:
         module_put(ttyhub_subsystems[index]->owner);
+error_unlock:
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         return err;
 }
 
