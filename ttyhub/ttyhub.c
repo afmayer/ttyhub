@@ -47,8 +47,8 @@ struct ttyhub_subsystem {
         struct module *owner;
 
         /* subsystem operations called by ttyhub */
-        int (*open)(void **, struct tty_struct *);
-        void (*close)(void *);
+        int (*attach)(void **, struct tty_struct *);
+        void (*detach)(void *);
         int (*probe_data)(const unsigned char *, int); // TODO pass private data to subsys ops
         int (*probe_size)(const unsigned char *, int);
         int (*do_receive)(const unsigned char *, int);
@@ -60,7 +60,7 @@ struct ttyhub_subsystem {
            ttys have this subsystem enabled */
         int enabled_refcount;
 
-        /* nonzero while the open() operation is called - prevents races when
+        /* nonzero while the attach() operation is called - prevents races when
            enabling a subsystem multiple times at once */
         int enable_in_progress;
 };
@@ -136,13 +136,13 @@ EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
  *
  * Locks:
  *      The subsystems lock (ttyhub_subsystems_lock) is held while actually
- *      enabling a subsystem, but not while the call to the subsystem's open()
- *      operation.
+ *      enabling a subsystem, but not while the call to the subsystem's
+ *      attach() operation.
  *
  * Returns:
  *      The return value can be directly used as the return value to the
  *      line discipline ioctl() operation. It is either a negative error code
- *      or a nonnegative value on success. The subsystem's open() operation
+ *      or a nonnegative value on success. The subsystem's attach() operation
  *      directly decides the return code if everything went well until that
  *      point. If it doesn't exist, zero is returned on success.
  */
@@ -181,10 +181,10 @@ static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
-        /* invoking the subsystem's open() operation must happen before
+        /* invoking the subsystem's attach() operation must happen before
            the bit in the enabled_subsystems array is set */
-        if (subs->open)
-                err = subs->open(&state->subsys_data, state->tty);
+        if (subs->attach)
+                err = subs->attach(&state->subsys_data, state->tty);
         if (err < 0)
                 goto error_decr_refcount;
 
@@ -228,8 +228,8 @@ static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
         subs->enabled_refcount--;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
-        if (subs->close)
-                subs->close(state->subsys_data);
+        if (subs->detach)
+                subs->detach(state->subsys_data);
 
         module_put(subs->owner);
 
