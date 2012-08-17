@@ -27,7 +27,9 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 //           subsys->enabled_refcount
 
 struct ttyhub_state {
-        // TODO private data pointer for subsystems
+        struct tty_struct *tty;
+        void *subsys_data;
+
         int recv_subsys;
         unsigned char *probed_subsystems;
         unsigned char *enabled_subsystems;
@@ -45,8 +47,8 @@ struct ttyhub_subsystem {
         struct module *owner;
 
         /* subsystem operations called by ttyhub */
-        int (*open)(void); // TODO correct arguments for subsys ops
-        void (*close)(void);
+        int (*open)(void **, struct tty_struct *);
+        void (*close)(void *);
         int (*probe_data)(const unsigned char *, int); // TODO pass private data to subsys ops
         int (*probe_size)(const unsigned char *, int);
         int (*do_receive)(const unsigned char *, int);
@@ -127,19 +129,26 @@ EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 {
         unsigned long flags;
+        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
 
         if (index >= max_subsys || index < 0)
                 return -1;
 
-        if (!try_module_get(ttyhub_subsystems[index]->owner))
+        if (!try_module_get(subs->owner))
                 return -1;
 
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         if (state->enabled_subsystems[index/8] & 1 << index%8)
                 goto error_unlock_putmodule;
-        ttyhub_subsystems[index]->enabled_refcount++;
+        subs->enabled_refcount++;
         state->enabled_subsystems[index/8] |= 1 << index%8;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+
+        /* in theory, the subsystem could have been disabled in the meantime
+           because the subsystem lock is not held any more */
+        if (subs->open)
+                subs->open(&state->subsys_data, state->tty);
+
         return 0;
 
 error_unlock_putmodule:
@@ -152,6 +161,7 @@ error_unlock_putmodule:
 static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
 {
         unsigned long flags;
+        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
 
         if (index >= max_subsys || index < 0)
                 return -1;
@@ -160,17 +170,20 @@ static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
         if (!(state->enabled_subsystems[index/8] & 1 << index%8))
                 goto error_unlock;
         state->enabled_subsystems[index/8] &= ~(1 << index%8);
-        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
         /* if the active subsystem happens to be the one we want to disable
            we must wait until the receive state machine finished receiving data
            with the current subsystem */
-        // TODO implement waiting for (recv_subsys < 0)
+        // TODO implement waiting for (recv_subsys < 0) - UNLOCK before waiting!
 
-        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
-        ttyhub_subsystems[index]->enabled_refcount--;
+        subs->enabled_refcount--;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-        module_put(ttyhub_subsystems[index]->owner);
+
+        if (subs->close)
+                subs->close(state->subsys_data);
+
+        module_put(subs->owner);
+
         return 0;
 
 error_unlock:
@@ -387,6 +400,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         if (state == NULL)
                 goto error_exit;
 
+        state->tty = tty;
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
 
