@@ -130,7 +130,22 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 
-// TODO doc
+/*
+ * Enable a subsystem on a given tty.
+ * This is a helper function for ttyhub_ldisc_ioctl().
+ *
+ * Locks:
+ *      The subsystems lock (ttyhub_subsystems_lock) is held while actually
+ *      enabling a subsystem, but not while the call to the subsystem's open()
+ *      operation.
+ *
+ * Returns:
+ *      The return value can be directly used as the return value to the
+ *      line discipline ioctl() operation. It is either a negative error code
+ *      or a nonnegative value on success. The subsystem's open() operation
+ *      directly decides the return code if everything went well until that
+ *      point. If it doesn't exist, zero is returned on success.
+ */
 static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 {
         unsigned long flags;
@@ -178,6 +193,7 @@ error_putmodule:
 // TODO doc - THIS MAY NOT FAIL!
 static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
 {
+        // TODO how to respect subs->enable_in_progress?
         unsigned long flags;
         struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
 
