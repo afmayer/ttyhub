@@ -21,8 +21,16 @@ static int probe_buf_size = 32;
 module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
+enum ttyhub_state_inuse {
+        TTYHUB_STATE_INUSE_IDLE = 0,
+        TTYHUB_STATE_INUSE_ACTIVE,
+        TTYHUB_STATE_INUSE_CLOSE_REQ,
+        TTYHUB_STATE_INUSE_CLOSE_GRANTED
+};
+
 struct ttyhub_state {
         spinlock_t lock;
+        enum ttyhub_state_inuse in_use;
 
         int recv_subsys;
         unsigned char *probed_subsystems;
@@ -341,6 +349,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
                 goto error_exit;
 
         spin_lock_init(&state->lock);
+        state->in_use = TTYHUB_STATE_INUSE_IDLE;
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
 
