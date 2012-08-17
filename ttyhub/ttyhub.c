@@ -57,10 +57,11 @@ struct ttyhub_subsystem {
         /* minimum bytes received before probing the submodule */
         int probe_data_minimum_bytes;
 
-        /* nonzero while subsystem may not be unregistered */
-        int refcount;
-        // TODO increase refcount when subsystem is enabled on a tty
-        //      decrease refcount when subsystem is disabled on a tty (or closed)
+        /* nonzero while subsystem may not be unregistered - counts how many
+           ttys have this subsystem enabled */
+        int enabled_refcount;
+        // TODO increase enabled_refcount when subsystem is enabled on a tty
+        //      decrease enabled_refcount when subsystem is disabled on a tty (or closed)
 };
 
 
@@ -88,7 +89,7 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
                 goto error_unlock_putmodule;
 
         ttyhub_subsystems[i] = subs;
-        subs->refcount = 0;
+        subs->enabled_refcount = 0;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
                 subs->name, i);
@@ -114,7 +115,7 @@ int ttyhub_unregister_subsystem(int index)
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         if (subs == NULL)
                 goto error_unlock;
-        if (subs->refcount != 0)
+        if (subs->enabled_refcount != 0)
                 goto error_unlock;
         ttyhub_subsystems[index] = NULL;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
@@ -141,8 +142,8 @@ static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         if (state->enabled_subsystems[index/8] & 1 << index%8)
-                goto error_unlock;
-        ttyhub_subsystems[index]->refcount++;
+                goto error_unlock_putmodule;
+        ttyhub_subsystems[index]->enabled_refcount++;
         state->enabled_subsystems[index/8] |= 1 << index%8;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         return 0;
