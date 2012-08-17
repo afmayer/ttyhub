@@ -74,8 +74,8 @@ static spinlock_t ttyhub_subsystems_lock;
  * and may not be modified from the outside once it is registered.
  *
  * Locks:
- *      The subsystems lock (ttyhub_subsystems_lock) is held searching for
- *      a free index and inserting the subsystem to the list.
+ *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
+ *      for a free index and inserting the subsystem to the list.
  *
  * Returns:
  *      On success the index of the registered subsystem is returned. When
@@ -115,7 +115,16 @@ error_unlock_putmodule:
 }
 EXPORT_SYMBOL_GPL(ttyhub_register_subsystem);
 
-// TODO doc
+/*
+ * Unregister a subsystem.
+ *
+ * Locks:
+ *      The subsystems lock (ttyhub_subsystems_lock) is held while removing
+ *      the subsystem from the list.
+ *
+ * Returns:
+ *      On success zero is returned. When an error occurs -1 is returned.
+ */
 int ttyhub_unregister_subsystem(int index)
 {
         unsigned long flags;
