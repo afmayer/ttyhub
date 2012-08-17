@@ -332,7 +332,11 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                 if (!(state->enabled_subsystems[i/8] & 1 << i%8))
                         continue;
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-                status = subs->probe_size(state->subsys_data, cp, count); // TODO implementation optional!
+                if (subs->probe_size)
+                        status = subs->probe_size(state->subsys_data,
+                                        cp, count);
+                else
+                        status = 0;
                 if (status > 0) {
                         /* size recognized */
                         state->recv_subsys = -3;
