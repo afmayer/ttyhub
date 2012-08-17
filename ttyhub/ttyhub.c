@@ -24,21 +24,10 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
-//           subsys->enabled_refcount, state->in_use,
-//           subsys->procs_waiting_for_close
-
-enum ttyhub_state_inuse {
-        TTYHUB_STATE_INUSE_IDLE = 0,
-        TTYHUB_STATE_INUSE_ACTIVE,
-        TTYHUB_STATE_INUSE_CLOSE_REQ,
-        TTYHUB_STATE_INUSE_FAST_CLOSE_REQ,
-        TTYHUB_STATE_INUSE_CLOSE_GRANTED
-};
+//           subsys->enabled_refcount
 
 struct ttyhub_state {
         // TODO private data pointer for subsystems
-        enum ttyhub_state_inuse in_use;
-
         int recv_subsys;
         unsigned char *probed_subsystems;
         unsigned char *enabled_subsystems;
@@ -68,7 +57,6 @@ struct ttyhub_subsystem {
         /* nonzero while subsystem may not be unregistered - counts how many
            ttys have this subsystem enabled */
         int enabled_refcount;
-        wait_queue_head_t procs_waiting_for_close; // TODO move this to ttyhub state
 };
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
@@ -96,7 +84,6 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
 
         ttyhub_subsystems[i] = subs;
         subs->enabled_refcount = 0;
-        init_waitqueue_head(&subs->procs_waiting_for_close);
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
                 subs->name, i);
@@ -172,8 +159,16 @@ static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
         spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         if (!(state->enabled_subsystems[index/8] & 1 << index%8))
                 goto error_unlock;
-        // TODO implement
-        // TODO decrease enabled_refcount when subsystem is disabled on a tty (or closed)
+        state->enabled_subsystems[index/8] &= ~(1 << index%8);
+        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
+
+        /* if the active subsystem happens to be the one we want to disable
+           we must wait until the receive state machine finished receiving data
+           with the current subsystem */
+        // TODO implement waiting for (recv_subsys < 0)
+
+        spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
+        ttyhub_subsystems[index]->enabled_refcount--;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         module_put(ttyhub_subsystems[index]->owner);
         return 0;
@@ -188,7 +183,7 @@ error_unlock:
  * The recv_subsys field and the array pointed to by probed_subsystems
  * of the ttyhub_state structure is changed according to the probe results,
  * but the probe buffer is not filled in case more data is needed.
- * This is a helper function for ttyhub_receive_buf().
+ * This is a helper function for ttyhub_ldisc_receive_buf().
  *
  * Locks:
  *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
@@ -246,7 +241,7 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
  * The recv_subsys and discard_bytes_remaining fields of the ttyhub_state 
  * structure are changed according to the probe results, but the probe buffer
  * is not filled in case more data is needed.
- * This is a helper function for ttyhub_receive_buf().
+ * This is a helper function for ttyhub_ldisc_receive_buf().
  *
  * Locks:
  *      The subsystems lock (ttyhub_subsystems_lock) is held while searching
@@ -311,7 +306,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
  * Append data to probe buffer.
  * Buffer is packed before appending when parts of the data
  * have already been consumed.
- * This is a helper function for ttyhub_receive_buf().
+ * This is a helper function for ttyhub_ldisc_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
  *
@@ -344,7 +339,7 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
  * This gets either a pointer to the probe buffer read head (when it is at
  * least partially filled) or a pointer to unread data in cp. The amount of
  * consumed data is considered for both situations.
- * This is a helper function for ttyhub_receive_buf().
+ * This is a helper function for ttyhub_ldisc_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
  */
@@ -368,7 +363,7 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
 
 /*
  * Mark received data as consumed - advance pointers for the next read access.
- * This is a helper function for ttyhub_receive_buf().
+ * This is a helper function for ttyhub_ldisc_receive_buf().
  *
  * All locks to involved data structures are asssumed to be held already.
  */
@@ -392,7 +387,6 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         if (state == NULL)
                 goto error_exit;
 
-        state->in_use = TTYHUB_STATE_INUSE_IDLE;
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
 
