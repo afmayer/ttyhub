@@ -23,7 +23,9 @@ MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
 
 // TODO List what is protected by ttyhub_subsystems_lock
-//      e.g. state->in_use, state->enabled_subsystems, subsystems list, subsys->refcount
+//      e.g. state->enabled_subsystems, subsystems list,
+//           subsys->enabled_refcount, subsys->active_refcount, subsys->in_use,
+//           subsys->procs_waiting_for_close
 
 enum ttyhub_state_inuse {
         TTYHUB_STATE_INUSE_IDLE = 0,
@@ -67,6 +69,7 @@ struct ttyhub_subsystem {
         int enabled_refcount;
         int active_refcount;
         enum ttyhub_state_inuse in_use;
+        wait_queue_head_t procs_waiting_for_close;
 };
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
@@ -96,6 +99,7 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         subs->enabled_refcount = 0;
         subs->active_refcount = 0;
         subs->in_use = TTYHUB_STATE_INUSE_IDLE;
+        init_waitqueue_head(&subs->procs_waiting_for_close);
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
         printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
                 subs->name, i);
@@ -135,18 +139,6 @@ error_unlock:
 }
 EXPORT_SYMBOL_GPL(ttyhub_unregister_subsystem);
 
-// TODO implement + doc
-static int ttyhub_inc_subsystem_refcount(int index)
-{
-        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
-}
-
-// TODO implement + doc
-static int ttyhub_dec_subsystem_refcount(int index)
-{
-        struct ttyhub_subsystem *subs = ttyhub_subsystems[index];
-}
-
 // TODO doc
 static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
 {
@@ -172,7 +164,7 @@ error_unlock_putmodule:
         return -1;
 }
 
-// TODO doc
+// TODO doc - THIS MAY NOT FAIL!
 static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
 {
         unsigned long flags;
