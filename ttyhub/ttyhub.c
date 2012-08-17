@@ -49,9 +49,9 @@ struct ttyhub_subsystem {
         /* subsystem operations called by ttyhub */
         int (*attach)(void **, struct tty_struct *);
         void (*detach)(void *);
-        int (*probe_data)(const unsigned char *, int); // TODO pass private data to subsys ops
-        int (*probe_size)(const unsigned char *, int);
-        int (*do_receive)(const unsigned char *, int);
+        int (*probe_data)(void *,const unsigned char *, int);
+        int (*probe_size)(void *, const unsigned char *, int);
+        int (*do_receive)(void *, const unsigned char *, int);
 
         /* minimum bytes received before probing the submodule */
         int probe_data_minimum_bytes;
@@ -277,7 +277,7 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         continue;
                 }
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-                if (subs->probe_data(cp, count)) {
+                if (subs->probe_data(state->subsys_data, cp, count)) {
                         /* data identified by subsystem */
                         state->recv_subsys = i;
                         for (j=0; j < (max_subsys-1)/8 + 1; j++)
@@ -332,7 +332,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                 if (!(state->enabled_subsystems[i/8] & 1 << i%8))
                         continue;
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-                status = subs->probe_size(cp, count);
+                status = subs->probe_size(state->subsys_data, cp, count); // TODO implementation optional!
                 if (status > 0) {
                         /* size recognized */
                         state->recv_subsys = -3;
@@ -617,7 +617,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 ttyhub_subsystems[state->recv_subsys];
                         ttyhub_get_recvd_data_head(state, cp, count,
                                                 &r_cp, &r_count);
-                        n = subs->do_receive(r_cp, r_count);
+                        n = subs->do_receive(state->subsys_data,
+                                        r_cp, r_count);
                         if (n < 0) {
                                 /* subsystem expects more data */
                                 ttyhub_recvd_data_consumed(state, r_count);
