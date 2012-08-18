@@ -79,7 +79,7 @@ int ttyhub_register_subsystem(struct ttyhub_subsystem *subs)
         subs->enabled_refcount = 0;
         subs->enable_in_progress = 0;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-        printk(KERN_INFO "TTYHUB: registered subsystem '%s' as #%d\n",
+        printk(KERN_INFO "ttyhub: registered subsystem '%s' as #%d\n",
                 subs->name, i);
         return i;
 
@@ -115,7 +115,7 @@ int ttyhub_unregister_subsystem(int index)
                 goto error_unlock;
         ttyhub_subsystems[index] = NULL;
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-        printk(KERN_INFO "TTYHUB: unregistered subsystem '%s'\n", subs->name);
+        printk(KERN_INFO "ttyhub: unregistered subsystem '%s'\n", subs->name);
         return 0;
 
 error_unlock:
@@ -670,7 +670,7 @@ static int __init ttyhub_init(void)
         if (probe_buf_size < 16)
                 probe_buf_size = 16;
 
-        printk(KERN_INFO "TTYHUB: version %s, max. subsystems = %d, probe "
+        printk(KERN_INFO "ttyhub: version %s, max. subsystems = %d, probe "
                 "bufsize = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
 
         /* allocate space for pointers to subsystems and init lock */
@@ -685,7 +685,7 @@ static int __init ttyhub_init(void)
         status = tty_register_ldisc(N_TTYHUB, &ttyhub_ldisc); // TODO dynamic LDISC nr
         if (status != 0) {
                 kfree(ttyhub_subsystems);
-                printk(KERN_ERR "TTYHUB: can't register line discipline "
+                printk(KERN_ERR "ttyhub: can't register line discipline "
                         "(err = %d)\n", status);
         }
         return status;
@@ -697,7 +697,7 @@ static void __exit ttyhub_exit(void)
 
         status = tty_unregister_ldisc(N_TTYHUB);
         if (status != 0)
-                printk(KERN_ERR "TTYHUB: can't unregister line "
+                printk(KERN_ERR "ttyhub: can't unregister line "
                         "discipline (err = %d)\n", status);
 
         if (ttyhub_subsystems != NULL)
