@@ -621,8 +621,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS) {
                 printk(KERN_INFO "ttyhub: entering ldisc receive_buf(tty="
-                                "%s, cp=%p, fp=%p, count=%d)\n", tty->name, cp,
-                                fp, count);
+                                "%s, cp=0x%p, fp=0x%p, count=%d)\n", tty->name,
+                                cp, fp, count);
                 print_hex_dump_bytes("ttyhub: receive_buf() cp: ",
                                 DUMP_PREFIX_OFFSET, cp, count);
                 if (fp)
@@ -745,6 +745,8 @@ exit:
                                 "%s, cp=%p, fp=%p, count=%d)\n", tty->name, cp,
                                 fp, count);
 }
+
+// TODO replace print_hex_dump_bytes() with print_hex_dump(KERN_INFO, prefix_str, prefix_type, 16, 1, buf, len, true);
 
 static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
 {
