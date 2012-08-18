@@ -29,6 +29,7 @@ struct ttyhub_subsystem { // TODO move to header file
 };
 
 int ttyhub_register_subsystem(struct ttyhub_subsystem *);
+int ttyhub_unregister_subsystem(int);
 
 // TODO END OF DATA THAT SHOULD GO TO A HEADER FILE
 
@@ -36,6 +37,7 @@ struct testsubsys0_data {
         int dummy;
 };
 
+int subsys_number = -1;
 struct ttyhub_subsystem subs;
 
 int testsubsys0_attach(void **data, struct tty_struct *tty)
@@ -98,11 +100,19 @@ static int __init testsubsys0_init(void)
                 printk(KERN_ERR "testsubsys0: could not register subsystem\n");
                 return -EINVAL;
         }
+        subsys_number = status;
         return 0;
 }
 
 static void __exit testsubsys0_exit(void)
 {
+        int status = 0;
+
+        if (subsys_number >= 0)
+                status = ttyhub_unregister_subsystem(subsys_number);
+
+        if (status != 0)
+                printk("testsubsys0: could not unregister subsystem\n");
 }
 
 module_init(testsubsys0_init);
