@@ -1,6 +1,9 @@
 #ifndef _TTYHUB_H
 #define _TTYHUB_H
 
+#include <linux/module.h>
+#include <linux/tty.h>
+
 struct ttyhub_subsystem {
         char *name;
         struct module *owner;
