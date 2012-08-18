@@ -29,9 +29,10 @@ static unsigned int debug = 0;
 module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
-#define TTYHUB_DEBUG_LDISC_OPS                  1
-#define TTYHUB_DEBUG_RECV_STATE_MACHINE         2
-#define TTYHUB_DEBUG_PROBE_BUFFER               4
+#define TTYHUB_DEBUG_LDISC_OPS_USER             1
+#define TTYHUB_DEBUG_LDISC_OPS_HW               2
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE         4
+#define TTYHUB_DEBUG_PROBE_BUFFER               8
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -451,7 +452,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         struct ttyhub_state *state;
         int err = -ENOBUFS;
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc open(tty=%s) enter\n",
                                 tty->name);
 
@@ -487,7 +488,7 @@ error_cleanup_probebuf:
 error_cleanup_state:
         kfree(state);
 error_exit:
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc open() exit = %d\n", err);
         return err;
 }
@@ -498,7 +499,7 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         struct ttyhub_state *state = tty->disc_data;
         int i;
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc close(tty=%s) enter\n",
                                 tty->name);
 
@@ -515,7 +516,7 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
                 kfree(state->probe_buf);
         kfree(state);
 exit:
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc close() exit\n");
 }
 
@@ -531,7 +532,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
         unsigned int size = _IOC_SIZE(cmd);
         unsigned char arg_buf[16];
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS) {
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER) {
                 char *debug_dir = (direction==_IOC_NONE) ? "NONE" :
                                 (direction==_IOC_READ) ? "RD" :
                                 (direction==_IOC_WRITE) ? "WR" : "R+W";
@@ -568,7 +569,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         err = -EFAULT;
                         goto copy_and_exit;
                 }
-                if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                         print_hex_dump_bytes("ttyhub: ldisc ioctl() arg from "
                                         "user: ", DUMP_PREFIX_OFFSET, arg_buf,
                                         size);
@@ -587,7 +588,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
 copy_and_exit:
         if (err >= 0 && direction & _IOC_READ) {
                 /* read or read+write */
-                if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                         print_hex_dump_bytes("ttyhub: ldisc ioctl() arg to "
                                         "user:   ", DUMP_PREFIX_OFFSET,
                                         arg_buf, size);
@@ -596,7 +597,7 @@ copy_and_exit:
                 }
         }
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc ioctl() exit = %d\n", err);
         return err;
 }
@@ -615,7 +616,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         const unsigned char *r_cp;
         int r_count;
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS) {
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_HW) {
                 printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
                                 "fp=0x%p, count=%d) enter\n", tty->name, cp,
                                 fp, count);
@@ -736,7 +737,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         }
 
 exit:
-        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+        if (debug & TTYHUB_DEBUG_LDISC_OPS_HW)
                 printk(KERN_INFO "ttyhub: ldisc receive_buf() exit\n");
 }
 
