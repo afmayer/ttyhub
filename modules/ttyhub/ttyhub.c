@@ -30,8 +30,8 @@ module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
 #define TTYHUB_DEBUG_LDISC_OPS                  1
-#define TTYHUB_DEBUG_SUBSYS_REG                 2
-#define TTYHUB_DEBUG_RECV_STATE_MACHINE         4
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE         2
+#define TTYHUB_DEBUG_PROBE_BUFFER               4
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -619,8 +619,16 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         const unsigned char *r_cp;
         int r_count;
 
-        // TODO conditional output if debug var set
-        printk(KERN_INFO "ttyhub_receive_buf() called with count=%d\n", count);
+        if (debug & TTYHUB_DEBUG_LDISC_OPS) {
+                printk(KERN_INFO "ttyhub: entering ldisc receive_buf(tty="
+                                "%s, cp=%p, fp=%p, count=%d)\n", tty->name, cp,
+                                fp, count);
+                print_hex_dump_bytes("ttyhub: receive_buf() cp: ",
+                                DUMP_PREFIX_OFFSET, cp, count);
+                if (fp)
+                        print_hex_dump_bytes("ttyhub: receive_buf() fp: ",
+                                        DUMP_PREFIX_OFFSET, fp, count);
+        }
 
         /* Receive state machine:
          * The relevant fields in the ttyhub_state struct are:
@@ -672,7 +680,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                         ttyhub_probebuf_push(state,
                                                 r_cp, r_count);
                                         // TODO check num of bytes actually copied?
-                                return;
+                                goto exit;
                         }
                 }
                 if (state->recv_subsys == -2) {
@@ -727,9 +735,15 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         if (state->cp_consumed == count &&
                                 state->probe_buf_count ==
                                 state->probe_buf_consumed)
-                                return;
+                                goto exit;
                 }
         }
+
+exit:
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub:  leaving ldisc receive_buf(tty="
+                                "%s, cp=%p, fp=%p, count=%d)\n", tty->name, cp,
+                                fp, count);
 }
 
 static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
