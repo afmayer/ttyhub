@@ -1,37 +1,8 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/tty.h>
+#include "ttyhub.h"
 MODULE_LICENSE("GPL");
-
-// TODO BEGIN OF DATA THAT SHOULD GO TO A HEADER FILE
-
-struct ttyhub_subsystem { // TODO move to header file
-        char *name;
-        struct module *owner;
-
-        /* subsystem operations called by ttyhub */
-        int (*attach)(void **, struct tty_struct *);
-        void (*detach)(void *);
-        int (*probe_data)(void *,const unsigned char *, int);
-        int (*probe_size)(void *, const unsigned char *, int);
-        int (*do_receive)(void *, const unsigned char *, int);
-
-        /* minimum bytes received before probing the submodule */
-        int probe_data_minimum_bytes;
-
-        /* nonzero while subsystem may not be unregistered - counts how many
-           ttys have this subsystem enabled */
-        int enabled_refcount;
-
-        /* nonzero while the attach() operation is called - prevents races when
-           enabling a subsystem multiple times at once */
-        int enable_in_progress;
-};
-
-int ttyhub_register_subsystem(struct ttyhub_subsystem *);
-int ttyhub_unregister_subsystem(int);
-
-// TODO END OF DATA THAT SHOULD GO TO A HEADER FILE
 
 struct testsubsys0_data {
         int dummy;
@@ -44,6 +15,8 @@ int testsubsys0_attach(void **data, struct tty_struct *tty)
 {
         struct testsubsys0_data **d = (struct testsubsys0_data **)data;
         (void)d;
+
+        printk(KERN_INFO "testsubsys0: invoked attach()\n");
 
         return 0;
 }

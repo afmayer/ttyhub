@@ -2,8 +2,11 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/tty.h>
+#include <linux/ioctl.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include "ttyhub.h"
+#include "ttyhub_ioctl.h"
 MODULE_LICENSE("GPL");
 
 #define TTYHUB_VERSION "0.10 pre-alpha"
@@ -40,29 +43,6 @@ struct ttyhub_state {
         int probe_buf_count;
 
         int cp_consumed;
-};
-
-struct ttyhub_subsystem {
-        char *name;
-        struct module *owner;
-
-        /* subsystem operations called by ttyhub */
-        int (*attach)(void **, struct tty_struct *);
-        void (*detach)(void *);
-        int (*probe_data)(void *,const unsigned char *, int);
-        int (*probe_size)(void *, const unsigned char *, int);
-        int (*do_receive)(void *, const unsigned char *, int);
-
-        /* minimum bytes received before probing the submodule */
-        int probe_data_minimum_bytes;
-
-        /* nonzero while subsystem may not be unregistered - counts how many
-           ttys have this subsystem enabled */
-        int enabled_refcount;
-
-        /* nonzero while the attach() operation is called - prevents races when
-           enabling a subsystem multiple times at once */
-        int enable_in_progress;
 };
 
 static struct ttyhub_subsystem **ttyhub_subsystems;
@@ -513,9 +493,6 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
                 kfree(state->probe_buf);
         kfree(state);
 }
-
-// TODO move IOCTL command definitions to header file
-#define TTYHUB_SUBSYS_ENABLE _IOW(0xFF, 1, int)
 
 /* Line discipline ioctl() operation */
 static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
