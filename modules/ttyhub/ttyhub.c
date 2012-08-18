@@ -452,7 +452,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         int err = -ENOBUFS;
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub: entering ldisc open(tty=%s)\n",
+                printk(KERN_INFO "ttyhub: ldisc open(tty=%s) enter\n",
                                 tty->name);
 
         state = kmalloc(sizeof(*state), GFP_KERNEL);
@@ -488,8 +488,7 @@ error_cleanup_state:
         kfree(state);
 error_exit:
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub:  leaving ldisc open(tty=%s) - "
-                                "ret=%d\n", tty->name, err);
+                printk(KERN_INFO "ttyhub: ldisc open() exit = %d\n", err);
         return err;
 }
 
@@ -500,7 +499,7 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         int i;
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub: entering ldisc close(tty=%s)\n",
+                printk(KERN_INFO "ttyhub: ldisc close(tty=%s) enter\n",
                                 tty->name);
 
         if (state == NULL)
@@ -517,8 +516,7 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         kfree(state);
 exit:
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub:  leaving ldisc close(tty=%s)\n",
-                                tty->name);
+                printk(KERN_INFO "ttyhub: ldisc close() exit\n");
 }
 
 /* Line discipline ioctl() operation */
@@ -528,18 +526,17 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
         int err = 0;
         struct ttyhub_state *state = tty->disc_data;
         unsigned int direction = _IOC_DIR(cmd);
-        char *debug_dir = "";
         unsigned int type = _IOC_TYPE(cmd);
         unsigned int nr = _IOC_NR(cmd);
         unsigned int size = _IOC_SIZE(cmd);
         unsigned char arg_buf[16];
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS) {
-                debug_dir = (direction==_IOC_NONE) ? "NONE" :
-                                (direction==_IOC_READ) ? "READ" :
-                                (direction==_IOC_WRITE) ? "WRITE" : "R+W";
-                printk(KERN_INFO "ttyhub: entering ldisc ioctl(tty=%s, "
-                                "cmd=%s/0x%02X/%u/%ubytes, arg=0x%lx)\n",
+                char *debug_dir = (direction==_IOC_NONE) ? "NONE" :
+                                (direction==_IOC_READ) ? "RD" :
+                                (direction==_IOC_WRITE) ? "WR" : "R+W";
+                printk(KERN_INFO "ttyhub: ldisc ioctl(tty=%s, "
+                                "cmd=%s/0x%02x/%u/%ubytes, arg=0x%lx) enter\n",
                                 tty->name, debug_dir, type, nr, size, arg);
         }
 
@@ -572,8 +569,9 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         goto copy_and_exit;
                 }
                 if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                        print_hex_dump_bytes("ttyhub: ioctl() arg from user: ",
-                                        DUMP_PREFIX_OFFSET, arg_buf, size);
+                        print_hex_dump_bytes("ttyhub: ldisc ioctl() arg from "
+                                        "user: ", DUMP_PREFIX_OFFSET, arg_buf,
+                                        size);
         }
 
         switch (cmd) {
@@ -590,18 +588,16 @@ copy_and_exit:
         if (err >= 0 && direction & _IOC_READ) {
                 /* read or read+write */
                 if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                        print_hex_dump_bytes("ttyhub: ioctl() arg to user:   ",
-                                        DUMP_PREFIX_OFFSET, arg_buf, size);
+                        print_hex_dump_bytes("ttyhub: ldisc ioctl() arg to "
+                                        "user:   ", DUMP_PREFIX_OFFSET,
+                                        arg_buf, size);
                 if (copy_to_user((void __user *)arg, arg_buf, size)) {
                         err = -EFAULT;
                 }
         }
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub:  leaving ldisc ioctl(tty=%s, cmd="
-                                "%s/0x%02X/%u/%ubytes, arg=0x%lx) - ret=%d\n",
-                                tty->name, debug_dir, type, nr, size, arg,
-                                err);
+                printk(KERN_INFO "ttyhub: ldisc ioctl() exit = %d\n", err);
         return err;
 }
 
@@ -620,14 +616,14 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         int r_count;
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS) {
-                printk(KERN_INFO "ttyhub: entering ldisc receive_buf(tty="
-                                "%s, cp=0x%p, fp=0x%p, count=%d)\n", tty->name,
-                                cp, fp, count);
-                print_hex_dump_bytes("ttyhub: receive_buf() cp: ",
+                printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
+                                "fp=0x%p, count=%d) enter\n", tty->name, cp,
+                                fp, count);
+                print_hex_dump_bytes("ttyhub: ldisc receive_buf() cp: ",
                                 DUMP_PREFIX_OFFSET, cp, count);
                 if (fp)
-                        print_hex_dump_bytes("ttyhub: receive_buf() fp: ",
-                                        DUMP_PREFIX_OFFSET, fp, count);
+                        print_hex_dump_bytes("ttyhub: ldisc receive_buf() fp"
+                                        ": ", DUMP_PREFIX_OFFSET, fp, count);
         }
 
         /* Receive state machine:
@@ -741,9 +737,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 
 exit:
         if (debug & TTYHUB_DEBUG_LDISC_OPS)
-                printk(KERN_INFO "ttyhub:  leaving ldisc receive_buf(tty="
-                                "%s, cp=%p, fp=%p, count=%d)\n", tty->name, cp,
-                                fp, count);
+                printk(KERN_INFO "ttyhub: ldisc receive_buf() exit\n");
 }
 
 // TODO replace print_hex_dump_bytes() with print_hex_dump(KERN_INFO, prefix_str, prefix_type, 16, 1, buf, len, true);
