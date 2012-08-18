@@ -3,6 +3,7 @@
 #include <linux/moduleparam.h>
 #include <linux/tty.h>
 #include <linux/ioctl.h>
+#include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include "ttyhub.h"
@@ -24,6 +25,13 @@ static int probe_buf_size = 32;
 module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
+static unsigned int debug = 0;
+module_param(debug, uint, 0);
+MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
+
+#define TTYHUB_DEBUG_LDISC_OPS                  1
+#define TTYHUB_DEBUG_SUBSYS_REG                 2
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE         4
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -443,6 +451,10 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         struct ttyhub_state *state;
         int err = -ENOBUFS;
 
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub: entering ldisc open(tty=%s)\n",
+                                tty->name);
+
         state = kmalloc(sizeof(*state), GFP_KERNEL);
         if (state == NULL)
                 goto error_exit;
@@ -467,13 +479,17 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
 
         /* success */
         tty->disc_data = state;
-        return 0;
+        err = 0;
+        goto error_exit;
 
 error_cleanup_probebuf:
         kfree(state->probe_buf);
 error_cleanup_state:
         kfree(state);
 error_exit:
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub:  leaving ldisc open(tty=%s) - "
+                                "ret=%d\n", tty->name, err);
         return err;
 }
 
@@ -483,8 +499,12 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         struct ttyhub_state *state = tty->disc_data;
         int i;
 
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub: entering ldisc close(tty=%s)\n",
+                                tty->name);
+
         if (state == NULL)
-                return;
+                goto exit;
 
         /* disable all subsystems that are enabled on this tty */
         for (i=0; i < max_subsys; i++)
@@ -495,26 +515,94 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         if (state->probe_buf != NULL)
                 kfree(state->probe_buf);
         kfree(state);
+exit:
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub:  leaving ldisc close(tty=%s)\n",
+                                tty->name);
 }
 
 /* Line discipline ioctl() operation */
 static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         unsigned int cmd, unsigned long arg)
 {
-        int index;
+        int err = 0;
         struct ttyhub_state *state = tty->disc_data;
+        unsigned int direction = _IOC_DIR(cmd);
+        char *debug_dir = "";
+        unsigned int type = _IOC_TYPE(cmd);
+        unsigned int nr = _IOC_NR(cmd);
+        unsigned int size = _IOC_SIZE(cmd);
+        unsigned char arg_buf[16];
+
+        if (debug & TTYHUB_DEBUG_LDISC_OPS) {
+                debug_dir = (direction==_IOC_NONE) ? "NONE" :
+                                (direction==_IOC_READ) ? "READ" :
+                                (direction==_IOC_WRITE) ? "WRITE" : "R+W";
+                printk(KERN_INFO "ttyhub: entering ldisc ioctl(tty=%s, "
+                                "cmd=%s/0x%02X/%u/%ubytes, arg=0x%lx)\n",
+                                tty->name, debug_dir, type, nr, size, arg);
+        }
+
+        if (type != 0xFF || size > sizeof(arg_buf)) { // TODO #define TTYHUB_IOCTL_TYPE_ID 0xFF
+                /* ioctl commands with incorrect type as well as commands that
+                   have a larger payload than fits in the buffer are ignored */
+                err = -ENOTTY;
+                goto copy_and_exit;
+        }
+
+        if (direction & _IOC_READ) {
+                /* read or read+write */
+                if (!access_ok(VERIFY_WRITE, (void __user *)arg, size)) {
+                        err = -EFAULT;
+                        goto copy_and_exit;
+                }
+        }
+        else if (direction & _IOC_WRITE) {
+                /* write only */
+                if (!access_ok(VERIFY_READ, (void __user *)arg, size)) {
+                        err = -EFAULT;
+                        goto copy_and_exit;
+                }
+        }
+
+        if (direction & _IOC_WRITE) {
+                /* write or read+write */
+                if (copy_from_user(arg_buf, (void __user *)arg, size)) {
+                        err = -EFAULT;
+                        goto copy_and_exit;
+                }
+                if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                        print_hex_dump_bytes("ttyhub: ioctl() arg from user: ",
+                                        DUMP_PREFIX_OFFSET, arg_buf, size);
+        }
 
         switch (cmd) {
         case TTYHUB_SUBSYS_ENABLE:
                 /* enable subsystem */
-                if (!access_ok(VERIFY_READ, (void __user *)arg, sizeof(int)))
-                        return -EFAULT;
-                if (copy_from_user(&index, (void __user *)arg, sizeof(index)))
-                        return -EFAULT;
-                return ttyhub_subsystem_enable(state, index);
+                err = ttyhub_subsystem_enable(state, *((int *)arg_buf));
+                goto copy_and_exit;
         default:
-                return -ENOTTY;
+                err = -ENOTTY;
+                goto copy_and_exit;
         }
+
+copy_and_exit:
+        if (err >= 0 && direction & _IOC_READ) {
+                /* read or read+write */
+                if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                        print_hex_dump_bytes("ttyhub: ioctl() arg to user:   ",
+                                        DUMP_PREFIX_OFFSET, arg_buf, size);
+                if (copy_to_user((void __user *)arg, arg_buf, size)) {
+                        err = -EFAULT;
+                }
+        }
+
+        if (debug & TTYHUB_DEBUG_LDISC_OPS)
+                printk(KERN_INFO "ttyhub:  leaving ldisc ioctl(tty=%s, cmd="
+                                "%s/0x%02X/%u/%ubytes, arg=0x%lx) - ret=%d\n",
+                                tty->name, debug_dir, type, nr, size, arg,
+                                err);
+        return err;
 }
 
 /*
