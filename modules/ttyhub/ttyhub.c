@@ -199,7 +199,7 @@ error_unlock:
         return err;
 }
 
-// TODO doc - THIS MAY NOT FAIL!
+// TODO doc - THIS MAY NOT FAIL FOR ACTUALLY ENABLED SUBSYSTEMS!
 static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
 {
         // TODO how to respect subs->enable_in_progress?
@@ -481,11 +481,14 @@ error_exit:
 static void ttyhub_ldisc_close(struct tty_struct *tty)
 {
         struct ttyhub_state *state = tty->disc_data;
+        int i;
 
         if (state == NULL)
                 return;
 
-        // TODO disable all subsystems on this tty!
+        /* disable all subsystems that are enabled on this tty */
+        for (i=0; i < max_subsys; i++)
+                ttyhub_subsystem_disable(state, i);
 
         if (state->probed_subsystems != NULL)
                 kfree(state->probed_subsystems);
