@@ -35,12 +35,34 @@ int testsubsys0_probe_data(void *data, const unsigned char *cp, int count)
         print_hex_dump_bytes("testsubsys0: invoked probe_data() - ",
                         DUMP_PREFIX_OFFSET, cp, count);
 
-        if (cp[0] == 'a' && cp[1] == 'b' && cp[2] == 'c' && cp[3] == 'd')
+        if (cp[0] == 'a' && cp[1] == 'b' && cp[2] == 'c' && cp[3] == 'd') {
                 /* data recognized */
+                printk("testsubsys0: data recognized\n");
                 return 1;
+        }
 
         /* data not recognized */
         return 0;
+}
+
+int testsubsys0_probe_size(void *data, const unsigned char *cp, int count)
+{
+        int size = 0;
+        struct testsubsys0_data *d = (struct testsubsys0_data *)data;
+        (void)d;
+
+        print_hex_dump_bytes("testsubsys0: invoked probe_size() - ",
+                        DUMP_PREFIX_OFFSET, cp, count);
+
+        if (count > 16) {
+                /* size recognized - use 17th char in buf for size calc */
+                size = cp[16] - 'A';
+                if (size <= 0)
+                        size = count;
+                printk("testsubsys0: size recognized as %d\n", size);
+        }
+
+        return size;
 }
 
 int testsubsys0_do_receive(void *data, const unsigned char *cp, int count)
@@ -65,6 +87,7 @@ static int __init testsubsys0_init(void)
         subs.attach = testsubsys0_attach;
         subs.detach = testsubsys0_detach;
         subs.probe_data = testsubsys0_probe_data;
+        subs.probe_size = testsubsys0_probe_size;
         subs.do_receive = testsubsys0_do_receive;
         subs.probe_data_minimum_bytes = 4;
 
