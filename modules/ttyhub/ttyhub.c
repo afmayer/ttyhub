@@ -438,12 +438,32 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
  */
 static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
 {
-        if (state->probe_buf_count - state->probe_buf_consumed)
+        int debug_probe_buf_in_use = 0; // TODO wrap in #ifdef
+
+        if (state->probe_buf_count - state->probe_buf_consumed) {
                 /* probe buffer in use */
+                debug_probe_buf_in_use = 1; // TODO wrap in #ifdef
                 state->probe_buf_consumed += count;
-        else
+        }
+        else {
                 /* probe buffer not in use */
                 state->cp_consumed += count;
+        }
+
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
+                printk(KERN_INFO "ttyhub: receive_buf() consumed %d bytes from"
+                        " %s\n", count, debug_probe_buf_in_use ? "probe buffer"
+                        : "cp");
+                if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF &&
+                                debug_probe_buf_in_use) {
+                        printk(KERN_INFO "ttyhub: receive_buf() probe_buf: "
+                                "count=%d, consumed=%d\n", state->
+                                probe_buf_count, state->probe_buf_consumed);
+                        print_hex_dump(KERN_INFO, "ttyhub: receive_buf()    |",
+                                DUMP_PREFIX_OFFSET, 16, 1, state->probe_buf,
+                                probe_buf_size, true);
+                }
+        }
 }
 
 /* Line discipline open() operation */
@@ -684,7 +704,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 "= %d\n", state->recv_subsys);
 
         while (1) {
-                int old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
+                int debug_old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
 
                 ttyhub_get_recvd_data_head(state, cp, count, &r_cp, &r_count);
                 if (r_count == 0) {
@@ -708,6 +728,10 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 state->discard_bytes_remaining : r_count;
                         ttyhub_recvd_data_consumed(state, n);
                         state->discard_bytes_remaining -= n;
+                        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
+                                printk(KERN_INFO "ttyhub: receive_buf() "
+                                        "discard_bytes_remaining = %d",
+                                        state->discard_bytes_remaining);
                         if (state->discard_bytes_remaining == 0)
                                 state->recv_subsys = -1;
                 }
@@ -737,7 +761,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                 }
 
                 if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE &&
-                                state->recv_subsys != old_recv_subsys)
+                                state->recv_subsys != debug_old_recv_subsys)
                         printk(KERN_INFO "ttyhub: receive_buf() new recv_"
                                         "subsys = %d\n", state->recv_subsys);
 
