@@ -530,9 +530,9 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
         unsigned char arg_buf[16];
 
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER) {
-                char *debug_dir = (direction==_IOC_NONE) ? "NONE" :
-                                (direction==_IOC_READ) ? "RD" :
-                                (direction==_IOC_WRITE) ? "WR" : "R+W";
+                char *debug_dir = (direction==_IOC_NONE) ? "none" :
+                                (direction==_IOC_READ) ? "read" :
+                                (direction==_IOC_WRITE) ? "write" : "r+w";
                 printk(KERN_INFO "ttyhub: ldisc ioctl(tty=%s, "
                                 "cmd=%s/0x%02x/%u/%ubytes, arg=0x%lx) enter\n",
                                 tty->name, debug_dir, type, nr, size, arg);
