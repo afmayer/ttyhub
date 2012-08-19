@@ -343,13 +343,11 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         /* size recognized */
                         state->recv_subsys = -3;
                         state->discard_bytes_remaining = status;
-                        spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                         return 0;
                 }
                 else if (status < 0) {
                         // TODO size not recognized but subsystem can identify
                         //      end of data - implement! (set recv_subsys to i)
-                        //      WHEN RETURNING DONT FORGET TO UNLOCK
                 }
                 spin_lock_irqsave(&ttyhub_subsystems_lock, flags);
         }
