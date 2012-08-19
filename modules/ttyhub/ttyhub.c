@@ -32,9 +32,9 @@ static unsigned int debug = 0;
 module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
-#define TTYHUB_DEBUG_LDISC_OPS_USER             1
-#define TTYHUB_DEBUG_RECV_STATE_MACHINE         2
-#define TTYHUB_DEBUG_PROBE_BUFFER_DUMP          4
+#define TTYHUB_DEBUG_LDISC_OPS_USER                     1
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE                 2
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF  4
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -617,13 +617,13 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         int r_count, wait;
 
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
-                printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
+                printk(KERN_INFO "ttyhub: receive_buf(tty=%s, cp=0x%p, "
                                 "fp=0x%p, count=%d) enter\n", tty->name, cp,
                                 fp, count);
-                print_hex_dump(KERN_INFO, "ttyhub: ldisc receive_buf() cp: ",
+                print_hex_dump(KERN_INFO, "ttyhub: receive_buf() cp: ",
                                 DUMP_PREFIX_OFFSET, 16, 1, cp, count, true);
                 if (fp)
-                        print_hex_dump(KERN_INFO, "ttyhub: ldisc receive_buf()"
+                        print_hex_dump(KERN_INFO, "ttyhub: receive_buf()"
                                         " fp: ", DUMP_PREFIX_OFFSET, 16, 1, fp,
                                         count, true);
         }
@@ -679,11 +679,21 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         if (state->probe_buf_count)
                 ttyhub_probebuf_push(state, cp, count);
 
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
+                printk(KERN_INFO "ttyhub: receive_buf() initial recv_subsys "
+                                "= %d\n", state->recv_subsys);
+
         while (1) {
+                int old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
+
                 ttyhub_get_recvd_data_head(state, cp, count, &r_cp, &r_count);
-                if (r_count == 0)
+                if (r_count == 0) {
                         /* all data consumed */
-                        goto exit;
+                        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
+                                printk(KERN_INFO "ttyhub: receive_buf() "
+                                                "exit (all data consumed)\n");
+                        return;
+                }
 
                 if (state->recv_subsys == -1) {
                         wait = ttyhub_probe_subsystems(state, r_cp, r_count);
@@ -726,19 +736,23 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         }
                 }
 
+                if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE &&
+                                state->recv_subsys != old_recv_subsys)
+                        printk(KERN_INFO "ttyhub: receive_buf() new recv_"
+                                        "subsys = %d\n", state->recv_subsys);
+
                 if (wait) {
                         /* wait for data to probe more subsystems */
                         if (state->probe_buf_count == 0)
                                 ttyhub_probebuf_push(state,
                                         r_cp, r_count);
                                 // TODO check num of bytes actually copied?
-                        goto exit;
+                        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
+                                printk(KERN_INFO "ttyhub: receive_buf() "
+                                                "exit (more data needed)\n");
+                        return;
                 }
         }
-
-exit:
-        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
-                printk(KERN_INFO "ttyhub: ldisc receive_buf() exit\n");
 }
 
 static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
