@@ -5,7 +5,7 @@
 #include <linux/tty.h>
 
 struct ttyhub_subsystem {
-        char *name;
+        const char *name;
         struct module *owner;
 
         /* subsystem operations called by ttyhub */
