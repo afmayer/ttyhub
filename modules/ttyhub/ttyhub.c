@@ -662,6 +662,17 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 
         /* when probe buffer is already partially filled append new incoming
            data to probe buffer */
+        // TODO RETHINK probe buffer management
+        //      - how do probe_buf_count and probe_buf_consumed influence if data is pushed or not?
+        //      - when are they reset to 0? what do they mean between calls?
+        //      - in this situation testing for (state->probe_buf_count - state->probe_buf_consumed)
+        //        introduces a bug - once data is recognized by a subsys, this condition is always false
+        //        the alternative (current implementation) leads to the following problem:
+        //              1) make the function return (all consumed) while in discard_bytes (state=-3) mode
+        //              2) until discard_bytes_remaining becomes 0, every incoming byte is pushed
+        //                 to the probe buffer before it is consumed - THIS SHOULD NOT HAPPEN!
+        //      - there are also other places with push_to_probe_buf() --> CHECK!
+        //      - also think about other issues (consume? other buf manipulation?)
         if (state->probe_buf_count)
                 ttyhub_probebuf_push(state, cp, count);
 
