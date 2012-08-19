@@ -59,6 +59,27 @@ struct ttyhub_state {
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
 
+const char *ttyhub_debug_state_to_string(struct ttyhub_state *state) // TODO wrap in #ifdef
+{
+        if (state->recv_subsys >= 0) {
+                return ttyhub_subsystems[state->recv_subsys]->name;
+        }
+        else {
+                switch (state->recv_subsys) {
+                case -1:
+                        return "PROBE_DATA";
+                case -2:
+                        return "PROBE_SIZE";
+                case -3:
+                        return "DISCARD_DATA";
+                case -4:
+                        return "TIMED_DROP_PACKET";
+                }
+        }
+
+        return "";
+}
+
 /*
  * Register a new subsystem.
  * The subsystem structure passed to this function is owned by the caller
@@ -701,7 +722,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                 printk(KERN_INFO "ttyhub: receive_buf() initial recv_subsys "
-                                "= %d\n", state->recv_subsys);
+                                "= %d (%s)\n", state->recv_subsys,
+                                ttyhub_debug_state_to_string(state));
 
         while (1) {
                 int debug_old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
@@ -763,7 +785,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                 if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE &&
                                 state->recv_subsys != debug_old_recv_subsys)
                         printk(KERN_INFO "ttyhub: receive_buf() new recv_"
-                                        "subsys = %d\n", state->recv_subsys);
+                                "subsys = %d (%s)\n", state->recv_subsys,
+                                ttyhub_debug_state_to_string(state));
 
                 if (wait) {
                         /* wait for data to probe more subsystems */
