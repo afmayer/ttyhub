@@ -538,7 +538,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                                 tty->name, debug_dir, type, nr, size, arg);
         }
 
-        if (type != 0xFF || size > sizeof(arg_buf)) { // TODO #define TTYHUB_IOCTL_TYPE_ID 0xFF
+        if (type != TTYHUB_IOCTL_TYPE_ID || size > sizeof(arg_buf)) {
                 /* ioctl commands with incorrect type as well as commands that
                    have a larger payload than fits in the buffer are ignored */
                 err = -ENOTTY;

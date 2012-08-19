@@ -1,7 +1,9 @@
 #ifndef _TTYHUB_IOCTL_H
 #define _TTYHUB_IOCTL_H
 
-#define TTYHUB_SUBSYS_ENABLE _IOW(0xFF, 1, int)
+#define TTYHUB_IOCTL_TYPE_ID 0xFF
+
+#define TTYHUB_SUBSYS_ENABLE _IOW(TTYHUB_IOCTL_TYPE_ID, 1, int)
 
 #endif /* _TTYHUB_IOCTL_H */
 
