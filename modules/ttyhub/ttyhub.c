@@ -73,7 +73,7 @@ const char *ttyhub_debug_state_to_string(struct ttyhub_state *state) // TODO wra
                 case -3:
                         return "DISCARD_DATA";
                 case -4:
-                        return "TIMED_DROP_PACKET";
+                        return "TIMED_DISCARD";
                 }
         }
 
@@ -685,9 +685,9 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
          *              been recognized
          *   2) probed_subsystems
          *        This is a pointer to an unsigned char array containing one
-         *        bit for every possible subsystem. When the addressed
-         *        subsystem is unknown a set bit indicates that the subsystem
-         *        has already been probed and should not be probed again.
+         *        bit for every possible subsystem. When the recv_subsys is
+         *        -1 a set bit indicates that the subsystem has already been
+         *        probed and should not be probed again.
          *   3) discard_bytes_remaining
          *        When recv_subsys is -3 this stores the number of bytes to
          *        be discarded. Decremented after data has been received.
