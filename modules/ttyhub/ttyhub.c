@@ -30,9 +30,8 @@ module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
 #define TTYHUB_DEBUG_LDISC_OPS_USER             1
-#define TTYHUB_DEBUG_LDISC_OPS_HW               2
-#define TTYHUB_DEBUG_RECV_STATE_MACHINE         4
-#define TTYHUB_DEBUG_PROBE_BUFFER               8
+#define TTYHUB_DEBUG_RECV_STATE_MACHINE         2
+#define TTYHUB_DEBUG_PROBE_BUFFER_DUMP          4
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -616,7 +615,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         const unsigned char *r_cp;
         int r_count;
 
-        if (debug & TTYHUB_DEBUG_LDISC_OPS_HW) {
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
                 printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
                                 "fp=0x%p, count=%d) enter\n", tty->name, cp,
                                 fp, count);
@@ -650,6 +649,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
          *        When recv_subsys is -3 this stores the number of bytes to
          *        be discarded. Decremented after data has been received.
          *   TODO describe probe_buf management related fields
+         * All data from cp must be either consumed by a subsystem or go to
+         * the probe buffer before returning from the call.
          * The state machine continues until either...
          *   ...more data is needed for probing
          *      --> received data is kept in the probe buffer between calls
@@ -738,7 +739,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         }
 
 exit:
-        if (debug & TTYHUB_DEBUG_LDISC_OPS_HW)
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                 printk(KERN_INFO "ttyhub: ldisc receive_buf() exit\n");
 }
 
