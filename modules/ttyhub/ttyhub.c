@@ -689,6 +689,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 if (state->probe_buf_count == 0)
                                         ttyhub_probebuf_push(state,
                                                 r_cp, r_count);
+                                goto exit;
                         }
                 }
                 if (state->recv_subsys == -3) {
