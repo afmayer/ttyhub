@@ -611,7 +611,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 {
         struct ttyhub_state *state = tty->disc_data;
         const unsigned char *r_cp;
-        int r_count;
+        int r_count, wait;
 
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
                 printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
@@ -666,36 +666,20 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                 ttyhub_probebuf_push(state, cp, count);
 
         while (1) {
+                ttyhub_get_recvd_data_head(state, cp, count, &r_cp, &r_count);
+                if (r_count == 0)
+                        /* all data consumed */
+                        goto exit;
+
                 if (state->recv_subsys == -1) {
-                        int status;
-                        ttyhub_get_recvd_data_head(state, cp, count,
-                                                &r_cp, &r_count);
-                        status = ttyhub_probe_subsystems(state, r_cp, r_count);
-                        if (status) {
-                                /* wait for data to probe more subsystems */
-                                if (state->probe_buf_count == 0)
-                                        ttyhub_probebuf_push(state,
-                                                r_cp, r_count);
-                                        // TODO check num of bytes actually copied?
-                                goto exit;
-                        }
+                        wait = ttyhub_probe_subsystems(state, r_cp, r_count);
                 }
-                if (state->recv_subsys == -2) {
-                        ttyhub_get_recvd_data_head(state, cp, count,
-                                                &r_cp, &r_count);
-                        if (ttyhub_probe_subsystems_size(state,
-                                                r_cp, r_count)) {
-                                /* wait for data to probe more subsystems */
-                                if (state->probe_buf_count == 0)
-                                        ttyhub_probebuf_push(state,
-                                                r_cp, r_count);
-                                goto exit;
-                        }
+                else if (state->recv_subsys == -2) {
+                        wait = ttyhub_probe_subsystems_size(state, r_cp,
+                                        r_count);
                 }
-                if (state->recv_subsys == -3) {
+                else if (state->recv_subsys == -3) {
                         int n;
-                        ttyhub_get_recvd_data_head(state, cp, count,
-                                                &r_cp, &r_count);
                         n = r_count > state->discard_bytes_remaining ?
                                 state->discard_bytes_remaining : r_count;
                         ttyhub_recvd_data_consumed(state, n);
@@ -703,12 +687,10 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         if (state->discard_bytes_remaining == 0)
                                 state->recv_subsys = -1;
                 }
-                if (state->recv_subsys >= 0) {
+                else if (state->recv_subsys >= 0) {
                         int n;
                         struct ttyhub_subsystem *subs =
                                 ttyhub_subsystems[state->recv_subsys];
-                        ttyhub_get_recvd_data_head(state, cp, count,
-                                                &r_cp, &r_count);
                         n = subs->do_receive(state->subsys_data,
                                         r_cp, r_count);
                         if (n < 0) {
@@ -728,12 +710,15 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                                 state->cp_consumed, count -
                                                 state->cp_consumed);
                         }
+                }
 
-                        /* all data from cp and probe buffer consumed? */
-                        if (state->cp_consumed == count &&
-                                state->probe_buf_count ==
-                                state->probe_buf_consumed)
-                                goto exit;
+                if (wait) {
+                        /* wait for data to probe more subsystems */
+                        if (state->probe_buf_count == 0)
+                                ttyhub_probebuf_push(state,
+                                        r_cp, r_count);
+                                // TODO check num of bytes actually copied?
+                        goto exit;
                 }
         }
 
