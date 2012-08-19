@@ -1,3 +1,6 @@
+// TODO write a reasonable file header (copyright, license, ...)
+// TODO wrap debug outputs in #ifdef - also make configurable (kbuild?)
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
