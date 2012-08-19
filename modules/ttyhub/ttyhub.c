@@ -569,9 +569,9 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         goto copy_and_exit;
                 }
                 if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
-                        print_hex_dump_bytes("ttyhub: ldisc ioctl() arg from "
-                                        "user: ", DUMP_PREFIX_OFFSET, arg_buf,
-                                        size);
+                        print_hex_dump(KERN_INFO, "ttyhub: ldisc ioctl() arg "
+                                        "from user: ", DUMP_PREFIX_OFFSET, 16,
+                                        1, arg_buf, size, true);
         }
 
         switch (cmd) {
@@ -588,9 +588,9 @@ copy_and_exit:
         if (err >= 0 && direction & _IOC_READ) {
                 /* read or read+write */
                 if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
-                        print_hex_dump_bytes("ttyhub: ldisc ioctl() arg to "
-                                        "user:   ", DUMP_PREFIX_OFFSET,
-                                        arg_buf, size);
+                        print_hex_dump(KERN_INFO, "ttyhub: ldisc ioctl() arg "
+                                        "to user:   ", DUMP_PREFIX_OFFSET, 16,
+                                        1, arg_buf, size, true);
                 if (copy_to_user((void __user *)arg, arg_buf, size)) {
                         err = -EFAULT;
                 }
@@ -619,11 +619,12 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                 printk(KERN_INFO "ttyhub: ldisc receive_buf(tty=%s, cp=0x%p, "
                                 "fp=0x%p, count=%d) enter\n", tty->name, cp,
                                 fp, count);
-                print_hex_dump_bytes("ttyhub: ldisc receive_buf() cp: ",
-                                DUMP_PREFIX_OFFSET, cp, count);
+                print_hex_dump(KERN_INFO, "ttyhub: ldisc receive_buf() cp: ",
+                                DUMP_PREFIX_OFFSET, 16, 1, cp, count, true);
                 if (fp)
-                        print_hex_dump_bytes("ttyhub: ldisc receive_buf() fp"
-                                        ": ", DUMP_PREFIX_OFFSET, fp, count);
+                        print_hex_dump(KERN_INFO, "ttyhub: ldisc receive_buf()"
+                                        " fp: ", DUMP_PREFIX_OFFSET, 16, 1, fp,
+                                        count, true);
         }
 
         /* Receive state machine:
@@ -742,8 +743,6 @@ exit:
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                 printk(KERN_INFO "ttyhub: ldisc receive_buf() exit\n");
 }
-
-// TODO replace print_hex_dump_bytes() with print_hex_dump(KERN_INFO, prefix_str, prefix_type, 16, 1, buf, len, true);
 
 static void ttyhub_ldisc_write_wakeup(struct tty_struct *tty)
 {
