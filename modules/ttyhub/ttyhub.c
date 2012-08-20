@@ -704,22 +704,6 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         /* when cp is read partially, this is used as an offset */
         state->cp_consumed = 0;
 
-        /* when probe buffer is already partially filled append new incoming
-           data to probe buffer */
-        // TODO RETHINK probe buffer management
-        //      - how do probe_buf_count and probe_buf_consumed influence if data is pushed or not?
-        //      - when are they reset to 0? what do they mean between calls?
-        //      - in this situation testing for (state->probe_buf_count - state->probe_buf_consumed)
-        //        introduces a bug - once data is recognized by a subsys, this condition is always false
-        //        the alternative (current implementation) leads to the following problem:
-        //              1) make the function return (all consumed) while in discard_bytes (state=-3) mode
-        //              2) until discard_bytes_remaining becomes 0, every incoming byte is pushed
-        //                 to the probe buffer before it is consumed - THIS SHOULD NOT HAPPEN!
-        //      - there are also other places with push_to_probe_buf() --> CHECK!
-        //      - also think about other issues (consume? other buf manipulation?)
-        if (state->probe_buf_count)
-                ttyhub_probebuf_push(state, cp, count);
-
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                 printk(KERN_INFO "ttyhub: receive_buf() initial recv_subsys "
                                 "= %d (%s)\n", state->recv_subsys,
@@ -728,8 +712,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         while (1) {
                 int debug_old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
 
-                ttyhub_get_recvd_data_head(state, cp, count, &r_cp, &r_count);
-                if (r_count == 0) {
+                if (state->probe_buf_count - state->probe_buf_consumed == 0 &&
+                                count - state->cp_consumed == 0) {
                         /* all data consumed */
                         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                                 printk(KERN_INFO "ttyhub: receive_buf() "
@@ -737,6 +721,16 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         return;
                 }
 
+                /* if there is data remaining in the probe buffer as well as in
+                   cp fill up the buffer (this is relevant after data has been
+                   consumed and before probing) */
+                if (state->probe_buf_count - state->probe_buf_consumed != 0 &&
+                                count - state->cp_consumed != 0)
+                        ttyhub_probebuf_push(state, cp +
+                                state->cp_consumed, count -
+                                state->cp_consumed);
+
+                ttyhub_get_recvd_data_head(state, cp, count, &r_cp, &r_count);
                 if (state->recv_subsys == -1) {
                         wait = ttyhub_probe_subsystems(state, r_cp, r_count);
                 }
@@ -771,14 +765,6 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 /* subsystem finished receiving */
                                 ttyhub_recvd_data_consumed(state, n);
                                 state->recv_subsys = -1;
-
-                                /* if there is data remaining in the probe
-                                   buffer as well as in cp fill up the buffer
-                                   before probing the subsystems again */
-                                if (state->probe_buf_count)
-                                        ttyhub_probebuf_push(state, cp +
-                                                state->cp_consumed, count -
-                                                state->cp_consumed);
                         }
                 }
 
@@ -790,9 +776,10 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 
                 if (wait) {
                         /* wait for data to probe more subsystems */
-                        if (state->probe_buf_count == 0)
-                                ttyhub_probebuf_push(state,
-                                        r_cp, r_count);
+                        if (count - state->cp_consumed != 0)
+                                ttyhub_probebuf_push(state, cp +
+                                        state->cp_consumed, count -
+                                        state->cp_consumed);
                                 // TODO check num of bytes actually copied?
                         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                                 printk(KERN_INFO "ttyhub: receive_buf() "
