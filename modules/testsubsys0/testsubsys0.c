@@ -1,22 +1,34 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/tty.h>
+#include <linux/slab.h>
 #include "ttyhub.h"
 MODULE_LICENSE("GPL");
 
 struct testsubsys0_data {
-        int dummy;
+        struct tty_struct *tty;
+        int receive_remain;
+        int receive_until_marker_mode;
 };
 
-int subsys_number = -1;
-struct ttyhub_subsystem subs;
+static int subsys_number = -1;
+static struct ttyhub_subsystem subs;
 
 int testsubsys0_attach(void **data, struct tty_struct *tty)
 {
         struct testsubsys0_data **d = (struct testsubsys0_data **)data;
         (void)d;
 
-        printk(KERN_INFO "testsubsys0: invoked attach()\n");
+        printk("testsubsys0: allocate %d bytes for state\n", sizeof(**d));
+        *d = kmalloc(sizeof(**d), GFP_KERNEL);
+        if (*d == NULL) {
+                printk(KERN_ERR "testsubsys0: can't allocate memory for state\n");
+                return -ENOMEM;
+        }
+
+        (*d)->tty = tty;
+        (*d)->receive_remain = 0;
+        (*d)->receive_until_marker_mode = 0;
 
         return 0;
 }
@@ -24,25 +36,53 @@ int testsubsys0_attach(void **data, struct tty_struct *tty)
 void testsubsys0_detach(void *data)
 {
         struct testsubsys0_data *d = (struct testsubsys0_data *)data;
-        (void)d;
+        printk("testsubsys0: detach() invoked\n");
+        if (d)
+                kfree(d);
+        else
+                printk(KERN_WARNING "testsubsys0: something's wrong - state pointer points to NULL\n");
 }
 
 int testsubsys0_probe_data(void *data, const unsigned char *cp, int count)
 {
         struct testsubsys0_data *d = (struct testsubsys0_data *)data;
+        int recognized = 0;
         (void)d;
 
         print_hex_dump_bytes("testsubsys0: invoked probe_data() - ",
                         DUMP_PREFIX_OFFSET, cp, count);
 
-        if (cp[0] == 'a' && cp[1] == 'b' && cp[2] == 'c' && cp[3] == 'd') {
-                /* data recognized */
-                printk("testsubsys0: data recognized\n");
-                return 1;
+        /* data recognition rules:
+         *      1) when the first 4 bytes are "!AAA" -> size = 4
+         *      2) when the first 2 bytes are "!B" -> next 2 bytes are size, decimal
+         *      3) when the first 4 bytes are "!CCC" -> receive everything until '$'
+         */
+
+        if (cp[0] != '!')
+                goto exit;
+
+        if (cp[1] == 'A' && cp[2] == 'A' && cp[3] == 'A') {
+                recognized = 1;
+                d->receive_remain = 4;
+        }
+        else if (cp[1] == 'B') {
+                if (cp[2] < '0' || cp[2] > '9' || cp[3] < '0' || cp[3] > '9')
+                        d->receive_remain = 4; /* non-numeric chars... */
+                else
+                        d->receive_remain = (cp[2]-'0') * 10 + (cp[3]-'0');
+                recognized = 1;
+        }
+        else if (cp[1] == 'C' && cp[2] == 'C' && cp[3] == 'C') {
+                printk("testsubsys0: receive_until_marker_mode on\n");
+                d->receive_until_marker_mode = 1;
+                recognized = 1;
         }
 
-        /* data not recognized */
-        return 0;
+exit:
+        if (recognized)
+                printk("testsubsys0: data recognized\n");
+
+        return recognized;
 }
 
 int testsubsys0_probe_size(void *data, const unsigned char *cp, int count)
@@ -54,12 +94,15 @@ int testsubsys0_probe_size(void *data, const unsigned char *cp, int count)
         print_hex_dump_bytes("testsubsys0: invoked probe_size() - ",
                         DUMP_PREFIX_OFFSET, cp, count);
 
+        // TODO recognize size of every packet beginning with ! <lowcase letter> similarly to !B
+
         if (count > 16) {
                 /* size recognized - use 17th char in buf for size calc */
-                size = cp[16] - 'A';
+                size = cp[16] - '@';
                 if (size <= 0)
                         size = count;
-                printk("testsubsys0: size recognized as %d\n", size);
+                printk("testsubsys0: size recognized as %d ('%c')\n", size,
+                        cp[16]);
         }
 
         return size;
@@ -68,12 +111,43 @@ int testsubsys0_probe_size(void *data, const unsigned char *cp, int count)
 int testsubsys0_do_receive(void *data, const unsigned char *cp, int count)
 {
         struct testsubsys0_data *d = (struct testsubsys0_data *)data;
+        int ret;
         (void)d;
 
         print_hex_dump_bytes("testsubsys0: invoked do_receive() - ",
                         DUMP_PREFIX_OFFSET, cp, count);
 
-        return count;
+        printk("testsubsys0:    receive_until_marker_mode=%d, "
+                "receive_remain=%d, count=%d\n", d->receive_until_marker_mode,
+                d->receive_remain, count);
+        if (d->receive_until_marker_mode) {
+                /* receive everything until and including '$' character */
+                int n = 0;
+                while (count--) {
+                        if (cp[n++] == '$') {
+                                printk("testsubsys0: found '$' --> "
+                                        "receive_until_marker_mode off\n");
+                                d->receive_until_marker_mode = 0;
+                                ret = n;
+                                goto exit;
+                        }
+                }
+                ret = -1;
+        }
+        else {
+                if (d->receive_remain > count) {
+                        ret = -1;
+                        d->receive_remain -= count;
+                }
+                else {
+                        ret = d->receive_remain;
+                        d->receive_remain = 0;
+                }
+        }
+
+exit:
+        printk("testsubsys0: exit do_receive() with %d\n", ret);
+        return ret;
 }
 
 /* module init/exit functions */
