@@ -80,6 +80,18 @@ const char *ttyhub_debug_state_to_string(struct ttyhub_state *state) // TODO wra
         return "";
 }
 
+void ttyhub_debug_dump_probe_buf(struct ttyhub_state *state) // TODO wrap in #ifdef
+{
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF) {
+                printk(KERN_INFO "ttyhub: receive_buf() probe_buf: count=%d, "
+                        "consumed=%d\n", state-> probe_buf_count,
+                        state->probe_buf_consumed);
+                print_hex_dump(KERN_INFO, "ttyhub: receive_buf()    |",
+                        DUMP_PREFIX_OFFSET, 16, 1, state->probe_buf,
+                        probe_buf_size, true);
+        }
+}
+
 /*
  * Register a new subsystem.
  * The subsystem structure passed to this function is owned by the caller
@@ -405,6 +417,8 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
 static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
+        int debug_packed = 0; // TODO wrap in #ifdef
+
         int room, n;
         if (state->probe_buf_consumed) {
                 /* probe buffer in use and partly consumed - pack */
@@ -415,12 +429,21 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         state->probe_buf[i] = state->probe_buf[i + offset];
                 state->probe_buf_count -= offset;
                 state->probe_buf_consumed = 0;
+                debug_packed = 1; // TODO wrap in #ifdef
         }
         room = probe_buf_size - state->probe_buf_count;
         n = count > room ? room : count;
         memcpy(state->probe_buf + state->probe_buf_count, cp, n);
         state->probe_buf_count += n;
         state->cp_consumed += n;
+
+        if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
+                printk(KERN_INFO "ttyhub: receive_buf() pushed %d bytes to "
+                        "probe buffer%s (%d requested)\n", n, debug_packed ?
+                        " (after pack)" : "", count);
+                ttyhub_debug_dump_probe_buf(state);
+        }
+
         return n;
 }
 
@@ -475,15 +498,8 @@ static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
                 printk(KERN_INFO "ttyhub: receive_buf() consumed %d bytes from"
                         " %s\n", count, debug_probe_buf_in_use ? "probe buffer"
                         : "cp");
-                if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF &&
-                                debug_probe_buf_in_use) {
-                        printk(KERN_INFO "ttyhub: receive_buf() probe_buf: "
-                                "count=%d, consumed=%d\n", state->
-                                probe_buf_count, state->probe_buf_consumed);
-                        print_hex_dump(KERN_INFO, "ttyhub: receive_buf()    |",
-                                DUMP_PREFIX_OFFSET, 16, 1, state->probe_buf,
-                                probe_buf_size, true);
-                }
+                if (debug_probe_buf_in_use)
+                        ttyhub_debug_dump_probe_buf(state);
         }
 }
 
