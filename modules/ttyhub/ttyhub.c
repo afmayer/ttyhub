@@ -13,7 +13,7 @@
 #include "ttyhub_ioctl.h"
 MODULE_LICENSE("GPL");
 
-#define TTYHUB_VERSION "0.10 pre-alpha"
+#define TTYHUB_VERSION "0.15 pre-alpha"
 
 #define N_TTYHUB 29
 #if N_TTYHUB >= NR_LDISCS
