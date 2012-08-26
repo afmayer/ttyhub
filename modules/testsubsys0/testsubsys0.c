@@ -96,8 +96,8 @@ int testsubsys0_probe_size(void *data, const unsigned char *cp, int count)
 
         // TODO recognize size of every packet beginning with ! <lowcase letter> similarly to !B
 
-        if (count > 16) {
-                /* size recognized - use 17th char in buf for size calc */
+        if (count > 16 && cp[16] != ' ') {
+                /* size recognized - use 17th char in buf for size calc - except when [space] */
                 size = cp[16] - '@';
                 if (size <= 0)
                         size = count;
