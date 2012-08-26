@@ -9,6 +9,7 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/jiffies.h>
 #include "ttyhub.h"
 #include "ttyhub_ioctl.h"
 MODULE_LICENSE("GPL");
@@ -43,11 +44,14 @@ MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 struct ttyhub_state {
         struct tty_struct *tty;
         void *subsys_data;
+        unsigned long timed_discard_min_silence; // TODO make this configurable in ioctl()
 
         int recv_subsys;
         unsigned char *probed_subsystems;
         unsigned char *enabled_subsystems;
         int discard_bytes_remaining;
+        unsigned long timed_discard_upto;
+        unsigned long timed_discard_count;
 
         unsigned char *probe_buf;
         int probe_buf_consumed;
@@ -395,8 +399,10 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         count >= probe_buf_size) || probe_buf_room == 0) {
                 /* no more space in the probe buffer to wait for more data (or
                    probe buffer is unused but received data is larger than
-                   the probe buffer) */
-                // TODO activate timed drop packet mode
+                   the probe buffer) --> timed discard mode */
+                state->recv_subsys = -4;
+                state->timed_discard_upto = jiffies +
+                        state->timed_discard_min_silence;
                 return 0;
         }
 
@@ -519,8 +525,11 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
                 goto error_exit;
 
         state->tty = tty;
+        state->timed_discard_min_silence = 5*HZ; // TODO choose a reasonable default time!
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
+        state->timed_discard_upto = 0;
+        state->timed_discard_count = 0;
 
         /* allocate probe buffer */
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
@@ -708,6 +717,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
          *   3) discard_bytes_remaining
          *        When recv_subsys is -3 this stores the number of bytes to
          *        be discarded. Decremented after data has been received.
+         *   4) timed_discard_upto
+         *        // TODO describe timed_discard_upto, timed_discard_count, timed_discard_min_silence
          *   TODO describe probe_buf management related fields
          * All data from cp must be either consumed by a subsystem or go to
          * the probe buffer before returning from the call.
@@ -767,6 +778,23 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                         state->discard_bytes_remaining);
                         if (state->discard_bytes_remaining == 0)
                                 state->recv_subsys = -1;
+                }
+                else if (state->recv_subsys == -4) {
+                        if (time_after(jiffies, state->timed_discard_upto)) {
+                                printk(KERN_WARNING "ttyhub: discarded %lu " // TODO make this warning configurable and rewrite 'based on time'
+                                        "unrecognized bytes based on time\n",
+                                        state->timed_discard_count);
+                                state->timed_discard_count = 0;
+                                state->recv_subsys = -1;
+                        }
+                        else {
+                                /* not enough time elapsed  - discard all
+                                   data and reset timeout */
+                                ttyhub_recvd_data_consumed(state, r_count);
+                                state->timed_discard_count += r_count;
+                                state->timed_discard_upto = jiffies +
+                                        state->timed_discard_min_silence;
+                        }
                 }
                 else if (state->recv_subsys >= 0) {
                         int n;
