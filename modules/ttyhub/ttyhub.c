@@ -429,7 +429,8 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         state->probe_buf[i] = state->probe_buf[i + offset];
                 state->probe_buf_count -= offset;
                 state->probe_buf_consumed = 0;
-                debug_packed = 1; // TODO wrap in #ifdef
+                if (max != 0)
+                        debug_packed = 1; // TODO wrap in #ifdef
         }
         room = probe_buf_size - state->probe_buf_count;
         n = count > room ? room : count;
