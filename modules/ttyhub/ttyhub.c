@@ -1,5 +1,4 @@
 // TODO write a reasonable file header (copyright, license, ...)
-// TODO wrap debug outputs in #ifdef - also make configurable (kbuild?)
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -29,6 +28,7 @@ static int probe_buf_size = 32;
 module_param(probe_buf_size, int, 0);
 MODULE_PARM_DESC(probe_buf_size, "Size of the TTYHUB receive probe buffer");
 
+#ifdef DEBUG
 static unsigned int debug = 0;
 module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
@@ -36,6 +36,7 @@ MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 #define TTYHUB_DEBUG_LDISC_OPS_USER                     1
 #define TTYHUB_DEBUG_RECV_STATE_MACHINE                 2
 #define TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF  4
+#endif /* DEBUG */
 
 // TODO List what is protected by ttyhub_subsystems_lock
 //      e.g. state->enabled_subsystems, subsystems list,
@@ -63,7 +64,8 @@ struct ttyhub_state {
 static struct ttyhub_subsystem **ttyhub_subsystems;
 static spinlock_t ttyhub_subsystems_lock;
 
-const char *ttyhub_debug_state_to_string(struct ttyhub_state *state) // TODO wrap in #ifdef
+#ifdef DEBUG
+const char *ttyhub_debug_state_to_string(struct ttyhub_state *state)
 {
         if (state->recv_subsys >= 0) {
                 return ttyhub_subsystems[state->recv_subsys]->name;
@@ -84,7 +86,7 @@ const char *ttyhub_debug_state_to_string(struct ttyhub_state *state) // TODO wra
         return "";
 }
 
-void ttyhub_debug_dump_probe_buf(struct ttyhub_state *state) // TODO wrap in #ifdef
+void ttyhub_debug_dump_probe_buf(struct ttyhub_state *state)
 {
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE_DUMP_PROBE_BUF) {
                 printk(KERN_INFO "ttyhub: receive_buf() probe_buf: count=%d, "
@@ -95,6 +97,7 @@ void ttyhub_debug_dump_probe_buf(struct ttyhub_state *state) // TODO wrap in #if
                         probe_buf_size, true);
         }
 }
+#endif /* DEBUG */
 
 /*
  * Register a new subsystem.
@@ -423,7 +426,9 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
 static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         const unsigned char *cp, int count)
 {
-        int debug_packed = 0; // TODO wrap in #ifdef
+#ifdef DEBUG
+        int debug_packed = 0;
+#endif
 
         int room, n;
         if (state->probe_buf_consumed) {
@@ -435,8 +440,10 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
                         state->probe_buf[i] = state->probe_buf[i + offset];
                 state->probe_buf_count -= offset;
                 state->probe_buf_consumed = 0;
+#ifdef DEBUG
                 if (max != 0)
-                        debug_packed = 1; // TODO wrap in #ifdef
+                        debug_packed = 1;
+#endif
         }
         room = probe_buf_size - state->probe_buf_count;
         n = count > room ? room : count;
@@ -444,12 +451,14 @@ static int ttyhub_probebuf_push(struct ttyhub_state *state,
         state->probe_buf_count += n;
         state->cp_consumed += n;
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
                 printk(KERN_INFO "ttyhub: receive_buf() pushed %d bytes to "
                         "probe buffer%s (%d requested)\n", n, debug_packed ?
                         " (after pack)" : "", count);
                 ttyhub_debug_dump_probe_buf(state);
         }
+#endif
 
         return n;
 }
@@ -489,11 +498,15 @@ static void ttyhub_get_recvd_data_head(struct ttyhub_state *state,
  */
 static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
 {
-        int debug_probe_buf_in_use = 0; // TODO wrap in #ifdef
+#ifdef DEBUG
+        int debug_probe_buf_in_use = 0;
+#endif
 
         if (state->probe_buf_count - state->probe_buf_consumed) {
                 /* probe buffer in use */
-                debug_probe_buf_in_use = 1; // TODO wrap in #ifdef
+#ifdef DEBUG
+                debug_probe_buf_in_use = 1;
+#endif
                 state->probe_buf_consumed += count;
         }
         else {
@@ -501,6 +514,7 @@ static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
                 state->cp_consumed += count;
         }
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
                 printk(KERN_INFO "ttyhub: receive_buf() consumed %d bytes from"
                         " %s\n", count, debug_probe_buf_in_use ? "probe buffer"
@@ -508,6 +522,7 @@ static void ttyhub_recvd_data_consumed(struct ttyhub_state *state, int count)
                 if (debug_probe_buf_in_use)
                         ttyhub_debug_dump_probe_buf(state);
         }
+#endif
 }
 
 /* Line discipline open() operation */
@@ -516,9 +531,11 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         struct ttyhub_state *state;
         int err = -ENOBUFS;
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc open(tty=%s) enter\n",
                                 tty->name);
+#endif
 
         state = kmalloc(sizeof(*state), GFP_KERNEL);
         if (state == NULL)
@@ -555,8 +572,12 @@ error_cleanup_probebuf:
 error_cleanup_state:
         kfree(state);
 error_exit:
+
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc open() exit = %d\n", err);
+#endif
+
         return err;
 }
 
@@ -566,9 +587,11 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         struct ttyhub_state *state = tty->disc_data;
         int i;
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc close(tty=%s) enter\n",
                                 tty->name);
+#endif
 
         if (state == NULL)
                 goto exit;
@@ -583,8 +606,11 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
                 kfree(state->probe_buf);
         kfree(state);
 exit:
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc close() exit\n");
+#endif
+        return;
 }
 
 /* Line discipline ioctl() operation */
@@ -595,11 +621,12 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
         struct ttyhub_state *state = tty->disc_data;
         unsigned int direction = _IOC_DIR(cmd);
         unsigned int type = _IOC_TYPE(cmd);
-        unsigned int nr = _IOC_NR(cmd);
         unsigned int size = _IOC_SIZE(cmd);
         unsigned char arg_buf[16];
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER) {
+                unsigned int nr = _IOC_NR(cmd);
                 char *debug_dir = (direction==_IOC_NONE) ? "none" :
                                 (direction==_IOC_READ) ? "read" :
                                 (direction==_IOC_WRITE) ? "write" : "r+w";
@@ -607,6 +634,7 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                                 "cmd=%s/0x%02x/%u/%ubytes, arg=0x%lx) enter\n",
                                 tty->name, debug_dir, type, nr, size, arg);
         }
+#endif
 
         if (type != TTYHUB_IOCTL_TYPE_ID || size > sizeof(arg_buf)) {
                 /* ioctl commands with incorrect type as well as commands that
@@ -636,10 +664,12 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
                         err = -EFAULT;
                         goto copy_and_exit;
                 }
+#ifdef DEBUG
                 if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                         print_hex_dump(KERN_INFO, "ttyhub: ldisc ioctl() arg "
                                         "from user: ", DUMP_PREFIX_OFFSET, 16,
                                         1, arg_buf, size, true);
+#endif
         }
 
         switch (cmd) {
@@ -655,17 +685,21 @@ static int ttyhub_ldisc_ioctl(struct tty_struct *tty, struct file *filp,
 copy_and_exit:
         if (err >= 0 && direction & _IOC_READ) {
                 /* read or read+write */
+#ifdef DEBUG
                 if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                         print_hex_dump(KERN_INFO, "ttyhub: ldisc ioctl() arg "
                                         "to user:   ", DUMP_PREFIX_OFFSET, 16,
                                         1, arg_buf, size, true);
+#endif
                 if (copy_to_user((void __user *)arg, arg_buf, size)) {
                         err = -EFAULT;
                 }
         }
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_LDISC_OPS_USER)
                 printk(KERN_INFO "ttyhub: ldisc ioctl() exit = %d\n", err);
+#endif
         return err;
 }
 
@@ -683,6 +717,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         const unsigned char *r_cp;
         int r_count, wait;
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
                 printk(KERN_INFO "ttyhub: receive_buf(tty=%s, cp=0x%p, "
                                 "fp=0x%p, count=%d) enter\n", tty->name, cp,
@@ -694,6 +729,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                         " fp: ", DUMP_PREFIX_OFFSET, 16, 1, fp,
                                         count, true);
         }
+#endif
 
         /* Receive state machine:
          * The relevant fields in the ttyhub_state struct are:
@@ -732,20 +768,26 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
         /* when cp is read partially, this is used as an offset */
         state->cp_consumed = 0;
 
+#ifdef DEBUG
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                 printk(KERN_INFO "ttyhub: receive_buf() initial recv_subsys "
                                 "= %d (%s)\n", state->recv_subsys,
                                 ttyhub_debug_state_to_string(state));
+#endif
 
         while (1) {
-                int debug_old_recv_subsys = state->recv_subsys; // TODO wrap in #ifdef
+#ifdef DEBUG
+                int debug_old_recv_subsys = state->recv_subsys;
+#endif
 
                 if (state->probe_buf_count - state->probe_buf_consumed == 0 &&
                                 count - state->cp_consumed == 0) {
                         /* all data consumed */
+#ifdef DEBUG
                         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                                 printk(KERN_INFO "ttyhub: receive_buf() "
                                                 "exit (all data consumed)\n");
+#endif
                         return;
                 }
 
@@ -772,10 +814,12 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                 state->discard_bytes_remaining : r_count;
                         ttyhub_recvd_data_consumed(state, n);
                         state->discard_bytes_remaining -= n;
+#ifdef DEBUG
                         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                                 printk(KERN_INFO "ttyhub: receive_buf() "
                                         "discard_bytes_remaining = %d",
                                         state->discard_bytes_remaining);
+#endif
                         if (state->discard_bytes_remaining == 0)
                                 state->recv_subsys = -1;
                 }
@@ -813,11 +857,13 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         }
                 }
 
+#ifdef DEBUG
                 if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE &&
                                 state->recv_subsys != debug_old_recv_subsys)
                         printk(KERN_INFO "ttyhub: receive_buf() new recv_"
                                 "subsys = %d (%s)\n", state->recv_subsys,
                                 ttyhub_debug_state_to_string(state));
+#endif
 
                 if (wait) {
                         /* wait for data to probe more subsystems */
@@ -826,9 +872,11 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                                         state->cp_consumed, count -
                                         state->cp_consumed);
                                 // TODO check num of bytes actually copied?
+#ifdef DEBUG
                         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE)
                                 printk(KERN_INFO "ttyhub: receive_buf() "
                                                 "exit (more data needed)\n");
+#endif
                         return;
                 }
         }
@@ -864,7 +912,11 @@ static int __init ttyhub_init(void)
                 probe_buf_size = 16;
 
         printk(KERN_INFO "ttyhub: version %s, max. subsystems = %d, probe "
-                "bufsize = %d\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
+                "bufsize = %d"
+#ifdef DEBUG
+                " (debug build)"
+#endif
+                "\n", TTYHUB_VERSION, max_subsys, probe_buf_size);
 
         /* allocate space for pointers to subsystems and init lock */
         ttyhub_subsystems = kzalloc(
