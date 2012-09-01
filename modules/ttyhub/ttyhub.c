@@ -44,7 +44,7 @@ MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
 struct ttyhub_state {
         struct tty_struct *tty;
-        void *subsys_data;
+        void *subsys_data; // TODO there must be one pointer for every possible subsystem, not only one!
         unsigned long timed_discard_min_silence; // TODO make this configurable in ioctl()
 
         int recv_subsys;
