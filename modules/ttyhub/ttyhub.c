@@ -211,8 +211,8 @@ static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
                 goto error_unlock;
         }
 
-        if (subs->enable_in_progress) {
-                err = -EBUSY;
+        if (subs->enable_in_progress) { // TODO HERE IS A BUG: enable_in_progress is never reset to 0 when the attach() operation returns an error!
+                err = -EBUSY;           //      This also happens when the subsystem is already enabled... simply move enable_in_progress=1 after setting bit
                 goto error_putmodule;
         }
         subs->enable_in_progress = 1;
