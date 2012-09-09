@@ -13,7 +13,7 @@
 #include "ttyhub_ioctl.h"
 MODULE_LICENSE("GPL");
 
-#define TTYHUB_VERSION "0.15 pre-alpha"
+#define TTYHUB_VERSION "0.20"
 
 #define N_TTYHUB 29
 #if N_TTYHUB >= NR_LDISCS
@@ -44,7 +44,7 @@ MODULE_PARM_DESC(debug, "Each bit controls a debug output category");
 
 struct ttyhub_state {
         struct tty_struct *tty;
-        void *subsys_data; // TODO there must be one pointer for every possible subsystem, not only one!
+        void **subsys_data;
         unsigned long timed_discard_min_silence; // TODO make this configurable in ioctl()
 
         int recv_subsys;
@@ -229,7 +229,7 @@ static int ttyhub_subsystem_enable(struct ttyhub_state *state, int index)
         /* invoking the subsystem's attach() operation must happen before
            the bit in the enabled_subsystems array is set */
         if (subs->attach)
-                err = subs->attach(&state->subsys_data, state->tty);
+                err = subs->attach(&state->subsys_data[index], state->tty);
         if (err < 0)
                 goto error_decr_refcount;
 
@@ -274,7 +274,7 @@ static int ttyhub_subsystem_disable(struct ttyhub_state *state, int index)
         spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
 
         if (subs->detach)
-                subs->detach(state->subsys_data);
+                subs->detach(state->subsys_data[index]);
 
         module_put(subs->owner);
 
@@ -322,7 +322,7 @@ static int ttyhub_probe_subsystems(struct ttyhub_state *state,
                         continue;
                 }
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
-                if (subs->probe_data(state->subsys_data, cp, count)) {
+                if (subs->probe_data(state->subsys_data[i], cp, count)) {
                         /* data identified by subsystem */
                         state->recv_subsys = i;
                         for (j=0; j < (max_subsys-1)/8 + 1; j++)
@@ -378,7 +378,7 @@ static int ttyhub_probe_subsystems_size(struct ttyhub_state *state,
                         continue;
                 spin_unlock_irqrestore(&ttyhub_subsystems_lock, flags);
                 if (subs->probe_size)
-                        status = subs->probe_size(state->subsys_data,
+                        status = subs->probe_size(state->subsys_data[i],
                                         cp, count);
                 else
                         status = 0;
@@ -542,6 +542,12 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
                 goto error_exit;
 
         state->tty = tty;
+
+        /* allocate space for one pointer for every possible subsystem */
+        state->subsys_data = kzalloc(sizeof(void *) * max_subsys, GFP_KERNEL);
+        if (state->subsys_data == NULL)
+                goto error_cleanup_state;
+
         state->timed_discard_min_silence = 5*HZ; // TODO choose a reasonable default time!
         state->recv_subsys = -1;
         state->discard_bytes_remaining = 0;
@@ -551,7 +557,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
         /* allocate probe buffer */
         state->probe_buf = kmalloc(probe_buf_size, GFP_KERNEL);
         if (state->probe_buf == NULL)
-                goto error_cleanup_state;
+                goto error_cleanup_subsys_data;
         state->probe_buf_consumed = 0;
         state->probe_buf_count = 0;
 
@@ -569,6 +575,8 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
 
 error_cleanup_probebuf:
         kfree(state->probe_buf);
+error_cleanup_subsys_data:
+        kfree(state->subsys_data);
 error_cleanup_state:
         kfree(state);
 error_exit:
@@ -604,6 +612,8 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
                 kfree(state->probed_subsystems);
         if (state->probe_buf != NULL)
                 kfree(state->probe_buf);
+        if (state->subsys_data != NULL)
+                kfree(state->subsys_data);
         kfree(state);
 exit:
 #ifdef DEBUG
@@ -844,7 +854,8 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
                         int n;
                         struct ttyhub_subsystem *subs =
                                 ttyhub_subsystems[state->recv_subsys];
-                        n = subs->do_receive(state->subsys_data,
+                        n = subs->do_receive(
+                                        state->subsys_data[state->recv_subsys],
                                         r_cp, r_count);
                         if (n < 0) {
                                 /* subsystem expects more data */
