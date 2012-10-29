@@ -1,3 +1,4 @@
+# Copyright (C) 2012 Alexander F. Mayer
 obj-y := testsubsys0/ ttyhub/
 KVERSION = $(shell uname -r)
 all:

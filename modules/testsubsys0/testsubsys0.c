@@ -1,3 +1,4 @@
+/* Copyright (C) 2012 Alexander F. Mayer */
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/tty.h>

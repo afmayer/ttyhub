@@ -1,3 +1,4 @@
+# Copyright (C) 2012 Alexander F. Mayer
 obj-m := ttyhub.o
 ccflags-y := -I$(src)/../include
 KVERSION = $(shell uname -r)

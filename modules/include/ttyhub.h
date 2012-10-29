@@ -1,5 +1,6 @@
 #ifndef _TTYHUB_H
 #define _TTYHUB_H
+/* Copyright (C) 2012 Alexander F. Mayer */
 
 #include <linux/module.h>
 #include <linux/tty.h>

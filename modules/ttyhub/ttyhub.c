@@ -1,3 +1,4 @@
+/* Copyright (C) 2012 Alexander F. Mayer */
 // TODO write a reasonable file header (copyright, license, ...)
 
 #include <linux/init.h>
