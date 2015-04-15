@@ -30,7 +30,6 @@ int main(int argc, char *argv[])
         int retVal;
         int fd;
         int ldisc = 29;
-        unsigned char buf[16] = "";
         struct timeval tv;
         char *pFilename = NULL;
         char filenamebuf[256];
@@ -67,9 +66,9 @@ int main(int argc, char *argv[])
         if (retVal == -1)
                 return 1;
 
-        retVal = ioctl(fd, TTYHUB_SUBSYS_ENABLE, buf);
-        printf("ioctl(%d, TTYHUB_SUBSYS_ENABLE, %d) returned %d - "
-                "errno = %d.\n", fd, *((int *)buf), retVal, errno);
+        retVal = ioctl(fd, TTYHUB_SUBSYS_ENABLE, 0);
+        printf("ioctl(%d, TTYHUB_SUBSYS_ENABLE, 0) returned %d - "
+                "errno = %d.\n", fd, retVal, errno);
         if (retVal == -1)
                 return 1;
 
