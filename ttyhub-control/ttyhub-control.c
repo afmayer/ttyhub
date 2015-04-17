@@ -33,6 +33,7 @@ int main(int argc, char *argv[])
         struct timeval tv;
         char *pFilename = NULL;
         char filenamebuf[256];
+        int subsystem = 0;
 
         printf("TTYHUB control\n");
 
@@ -66,7 +67,7 @@ int main(int argc, char *argv[])
         if (retVal == -1)
                 return 1;
 
-        retVal = ioctl(fd, TTYHUB_SUBSYS_ENABLE, 0);
+        retVal = ioctl(fd, TTYHUB_SUBSYS_ENABLE, &subsystem);
         printf("ioctl(%d, TTYHUB_SUBSYS_ENABLE, 0) returned %d - "
                 "errno = %d.\n", fd, retVal, errno);
         if (retVal == -1)
