@@ -27,7 +27,7 @@ struct ttyhub_subsystem {
         /* subsystem operations called by ttyhub */
         int (*attach)(void **, struct tty_struct *);
         void (*detach)(void *);
-        int (*probe_data)(void *,const unsigned char *, int);
+        int (*probe_data)(void *, const unsigned char *, int);
         int (*probe_size)(void *, const unsigned char *, int);
         int (*do_receive)(void *, const unsigned char *, int);
 
