@@ -37,7 +37,7 @@ int testsubsys0_attach(void **data, struct tty_struct *tty)
         struct testsubsys0_data **d = (struct testsubsys0_data **)data;
         (void)d;
 
-        printk("testsubsys0: allocate %d bytes for state\n", sizeof(**d));
+        printk("testsubsys0: allocate %zu bytes for state\n", sizeof(**d));
         *d = kmalloc(sizeof(**d), GFP_KERNEL);
         if (*d == NULL) {
                 printk(KERN_ERR "testsubsys0: can't allocate memory for state\n");
