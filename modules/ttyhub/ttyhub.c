@@ -586,6 +586,7 @@ static int ttyhub_ldisc_open(struct tty_struct *tty)
 
         /* success */
         tty->disc_data = state;
+        tty->receive_room = 65536;
         err = 0;
         goto error_exit;
 
