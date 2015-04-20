@@ -742,7 +742,7 @@ static void ttyhub_ldisc_receive_buf(struct tty_struct *tty,
 {
         struct ttyhub_state *state = tty->disc_data;
         const unsigned char *r_cp;
-        int r_count, wait;
+        int r_count, wait = 0;
 
 #ifdef DEBUG
         if (debug & TTYHUB_DEBUG_RECV_STATE_MACHINE) {
