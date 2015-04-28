@@ -625,12 +625,9 @@ static void ttyhub_ldisc_close(struct tty_struct *tty)
         for (i=0; i < max_subsys; i++)
                 ttyhub_subsystem_disable(state, i);
 
-        if (state->probed_subsystems != NULL)
-                kfree(state->probed_subsystems);
-        if (state->probe_buf != NULL)
-                kfree(state->probe_buf);
-        if (state->subsys_data != NULL)
-                kfree(state->subsys_data);
+        kfree(state->probed_subsystems);
+        kfree(state->probe_buf);
+        kfree(state->subsys_data);
         kfree(state);
 exit:
 #ifdef DEBUG
@@ -973,8 +970,7 @@ static void __exit ttyhub_exit(void)
                 printk(KERN_ERR "ttyhub: can't unregister line "
                         "discipline (err = %d)\n", status);
 
-        if (ttyhub_subsystems != NULL)
-                kfree(ttyhub_subsystems);
+        kfree(ttyhub_subsystems);
 }
 
 module_init(ttyhub_init);
